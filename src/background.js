@@ -1,7 +1,17 @@
+importScripts(
+  "background-state.js",
+  "site-registry.js",
+  "sites/crunchyroll.js",
+  "sites/hidive.js",
+  "sites/9anime.js"
+);
+
 const HOST_NAME = "com.drpc.browser_host";
 const HEARTBEAT_ALARM = "drpc-heartbeat";
-const NO_ACTIVE_TAB_SITE_ID = "drpc-no-active-tab";
-const INTERNAL_PAGE_SITE_ID = "drpc-internal-page";
+
+const registry = globalThis.DrpcSiteRegistry;
+const stateApi = globalThis.DrpcBackgroundState;
+const cachedSiteSnapshots = new Map();
 
 let nativePort = null;
 
@@ -42,7 +52,7 @@ function ensureNativePort() {
 
   try {
     nativePort = chrome.runtime.connectNative(HOST_NAME);
-    void updateStatus("wait", { message: "Connected to native host. Waiting for activity." });
+    void updateStatus("wait", { message: "Connected to native host. Waiting for browser activity." });
   } catch (error) {
     void updateStatus("error", { message: `connectNative failed: ${error.message}` });
     throw error;
@@ -61,12 +71,48 @@ function ensureNativePort() {
   return nativePort;
 }
 
-function normalizeSnapshot(snapshot, tab) {
+function isInspectableWebUrl(url) {
+  return String(url || "").startsWith("http://") || String(url || "").startsWith("https://");
+}
+
+function getSiteDefinitionForUrl(url) {
+  if (!registry) {
+    return null;
+  }
+
+  return registry.findSiteForUrl(url);
+}
+
+function buildClearSnapshot(tab, siteId = "") {
+  const url = tab?.url || "";
+  let host = "";
+  try {
+    host = new URL(url).host;
+  } catch (error) {
+    host = "";
+  }
+
+  return {
+    schemaVersion: 2,
+    browser: detectBrowserName(),
+    tabId: tab?.id ?? null,
+    url,
+    host,
+    pageTitle: tab?.title || "No matched browser activity",
+    siteId,
+    playbackState: "idle",
+    activityDisposition: "clear",
+    activityCard: null,
+    sentAtUnixMs: Date.now()
+  };
+}
+
+function normalizeSnapshot(snapshot, tab, dispositionOverride = null) {
   if (!snapshot) {
     return null;
   }
 
-  const url = snapshot.url || tab.url || "";
+  const url = snapshot.url || tab?.url || "";
   let host = snapshot.host || "";
   try {
     host = host || new URL(url).host;
@@ -75,83 +121,43 @@ function normalizeSnapshot(snapshot, tab) {
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     browser: detectBrowserName(),
-    tabId: tab.id ?? null,
+    tabId: snapshot.tabId ?? tab?.id ?? null,
     url,
     host,
-    pageTitle: snapshot.pageTitle || tab.title || "",
+    pageTitle: snapshot.pageTitle || tab?.title || "",
     siteId: snapshot.siteId || "",
-    playbackState: snapshot.playbackState || (tab.audible ? "playing" : "idle"),
-    seriesTitle: snapshot.seriesTitle || "",
-    episodeLabel: snapshot.episodeLabel || "",
-    positionSeconds: snapshot.positionSeconds ?? null,
-    durationSeconds: snapshot.durationSeconds ?? null,
+    playbackState: snapshot.playbackState || "idle",
+    activityDisposition: dispositionOverride || snapshot.activityDisposition || "clear",
+    activityCard: snapshot.activityCard || null,
     sentAtUnixMs: Date.now()
   };
 }
 
-function classifyTab(tab) {
-  if (!tab) {
-    return "none";
+function cacheSnapshot(snapshot) {
+  if (!snapshot || snapshot.tabId == null) {
+    return;
   }
 
-  const url = tab.url || "";
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return "web";
+  if (snapshot.activityDisposition === "publish" && snapshot.activityCard) {
+    stateApi.upsertCachedSnapshot(cachedSiteSnapshots, snapshot);
+    return;
   }
 
-  return "internal";
+  stateApi.removeCachedSnapshot(cachedSiteSnapshots, snapshot.tabId);
 }
 
-function buildBrowserStateSnapshot({ pageTitle, siteId, url = "", host = "", tabId = null }) {
-  return {
-    schemaVersion: 1,
-    browser: detectBrowserName(),
-    tabId,
-    url,
-    host,
-    pageTitle,
-    siteId,
-    playbackState: "idle",
-    seriesTitle: "",
-    episodeLabel: "",
-    positionSeconds: null,
-    durationSeconds: null,
-    sentAtUnixMs: Date.now()
-  };
-}
-
-function buildNoActiveTabSnapshot() {
-  return buildBrowserStateSnapshot({
-    pageTitle: "No active browser tab",
-    siteId: NO_ACTIVE_TAB_SITE_ID
-  });
-}
-
-function buildInternalPageSnapshot(tab) {
-  let host = "";
-  try {
-    const parsed = new URL(tab.url || "");
-    host = parsed.host || parsed.protocol.replace(/:$/, "");
-  } catch (error) {
-    host = "";
+function removeCachedSnapshot(tabId) {
+  if (tabId == null) {
+    return;
   }
 
-  return buildBrowserStateSnapshot({
-    pageTitle: tab?.title || "Unsupported browser page",
-    siteId: INTERNAL_PAGE_SITE_ID,
-    url: tab?.url || "",
-    host,
-    tabId: tab?.id ?? null
-  });
+  stateApi.removeCachedSnapshot(cachedSiteSnapshots, tabId);
 }
 
-function buildGenericSnapshot(tab) {
-  return normalizeSnapshot({
-    pageTitle: tab.title || "",
-    playbackState: tab.audible ? "playing" : "idle"
-  }, tab);
+function buildStickySnapshot() {
+  return stateApi.selectLatestCachedSnapshot(cachedSiteSnapshots);
 }
 
 function postSnapshot(snapshot, messageOverride = null) {
@@ -165,7 +171,8 @@ function postSnapshot(snapshot, messageOverride = null) {
       message: messageOverride || "Snapshot forwarded to native host.",
       host: snapshot.host,
       pageTitle: snapshot.pageTitle,
-      playbackState: snapshot.playbackState
+      playbackState: snapshot.playbackState,
+      activityDisposition: snapshot.activityDisposition
     });
   } catch (error) {
     nativePort = null;
@@ -183,8 +190,13 @@ async function getActiveTab() {
 }
 
 async function requestSnapshotFromTab(tab) {
-  if (!tab?.id || !tab.url || !tab.url.startsWith("http")) {
-    return null;
+  if (!tab?.id || !isInspectableWebUrl(tab.url)) {
+    return buildClearSnapshot(tab);
+  }
+
+  const siteDefinition = getSiteDefinitionForUrl(tab.url);
+  if (!siteDefinition) {
+    return buildClearSnapshot(tab);
   }
 
   try {
@@ -196,25 +208,62 @@ async function requestSnapshotFromTab(tab) {
     // No content script available for this tab.
   }
 
-  return buildGenericSnapshot(tab);
+  return buildClearSnapshot(tab, siteDefinition.metadata.id);
 }
 
-async function collectAndSendActiveTab() {
-  const tab = await getActiveTab();
-  const tabType = classifyTab(tab);
+async function refreshCachedSnapshotForTab(tabId) {
+  if (tabId == null) {
+    return null;
+  }
 
-  if (tabType === "none") {
-    postSnapshot(buildNoActiveTabSnapshot(), "No active browser tab.");
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || !getSiteDefinitionForUrl(tab.url)) {
+      removeCachedSnapshot(tabId);
+      return null;
+    }
+
+    const snapshot = await requestSnapshotFromTab(tab);
+    cacheSnapshot(snapshot);
+    return snapshot;
+  } catch (error) {
+    removeCachedSnapshot(tabId);
+    return null;
+  }
+}
+
+async function refreshCachedSnapshots() {
+  for (const tabId of Array.from(cachedSiteSnapshots.keys())) {
+    await refreshCachedSnapshotForTab(tabId);
+  }
+}
+
+async function publishBestAvailableSnapshot(activeTab = null) {
+  const tab = activeTab || await getActiveTab();
+
+  if (!tab) {
+    const stickySnapshot = buildStickySnapshot();
+    postSnapshot(stickySnapshot || buildClearSnapshot(null), stickySnapshot ? "Using sticky matched browser activity." : "No active browser tab.");
     return;
   }
 
-  if (tabType === "internal") {
-    postSnapshot(buildInternalPageSnapshot(tab), "Active tab is a browser page that extensions cannot inspect.");
+  if (!isInspectableWebUrl(tab.url)) {
+    removeCachedSnapshot(tab.id);
+    const stickySnapshot = buildStickySnapshot();
+    postSnapshot(stickySnapshot || buildClearSnapshot(tab), stickySnapshot ? "Using sticky matched browser activity." : "Active tab is not an inspectable web page.");
     return;
   }
 
   const snapshot = await requestSnapshotFromTab(tab);
-  postSnapshot(snapshot);
+  cacheSnapshot(snapshot);
+
+  if (snapshot.activityDisposition === "publish" && snapshot.activityCard) {
+    postSnapshot(snapshot);
+    return;
+  }
+
+  const stickySnapshot = buildStickySnapshot();
+  postSnapshot(stickySnapshot || snapshot, stickySnapshot ? "Using sticky matched browser activity." : "No matched browser activity for the active tab.");
 }
 
 chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 1 });
@@ -222,37 +271,59 @@ chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 1 });
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 1 });
   void updateStatus("wait", { message: "Extension installed. Waiting for active tab scan." });
-  void collectAndSendActiveTab();
-});
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === HEARTBEAT_ALARM) {
-    void collectAndSendActiveTab();
-  }
-});
-
-chrome.tabs.onActivated.addListener(() => {
-  void collectAndSendActiveTab();
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (tab.active && (changeInfo.status === "complete" || changeInfo.url)) {
-    void collectAndSendActiveTab();
-  }
-});
-
-chrome.windows.onFocusChanged.addListener(() => {
-  void collectAndSendActiveTab();
+  void publishBestAvailableSnapshot();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 1 });
   void updateStatus("wait", { message: "Browser startup detected. Waiting for active tab scan." });
-  void collectAndSendActiveTab();
+  void publishBestAvailableSnapshot();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === HEARTBEAT_ALARM) {
+    void refreshCachedSnapshots().then(() => publishBestAvailableSnapshot());
+  }
+});
+
+chrome.tabs.onActivated.addListener(() => {
+  void publishBestAvailableSnapshot();
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url && !getSiteDefinitionForUrl(changeInfo.url)) {
+    removeCachedSnapshot(tabId);
+  }
+
+  if (cachedSiteSnapshots.has(tabId) && (changeInfo.status === "complete" || changeInfo.url)) {
+    void refreshCachedSnapshotForTab(tabId).then(() => {
+      if (tab.active) {
+        return publishBestAvailableSnapshot(tab);
+      }
+      return null;
+    });
+    return;
+  }
+
+  if (tab.active && (changeInfo.status === "complete" || changeInfo.url)) {
+    void publishBestAvailableSnapshot(tab);
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  const removedStickySource = cachedSiteSnapshots.has(tabId);
+  removeCachedSnapshot(tabId);
+  if (removedStickySource) {
+    void publishBestAvailableSnapshot();
+  }
+});
+
+chrome.windows.onFocusChanged.addListener(() => {
+  void publishBestAvailableSnapshot();
 });
 
 chrome.action.onClicked.addListener(() => {
-  void collectAndSendActiveTab();
+  void publishBestAvailableSnapshot();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -261,8 +332,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const snapshot = normalizeSnapshot(message.snapshot, sender.tab);
+  cacheSnapshot(snapshot);
+
   if (sender.tab.active) {
-    postSnapshot(snapshot);
+    if (snapshot.activityDisposition === "publish" && snapshot.activityCard) {
+      postSnapshot(snapshot);
+    } else {
+      const stickySnapshot = buildStickySnapshot();
+      postSnapshot(stickySnapshot || snapshot, stickySnapshot ? "Using sticky matched browser activity." : "No matched browser activity for the active tab.");
+    }
   }
+
   sendResponse({ ok: true });
 });

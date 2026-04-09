@@ -1,6 +1,8 @@
 (function() {
-  const adapters = globalThis.DrpcBrowserAdapters;
-  let attachedVideo = null;
+  const registry = globalThis.DrpcSiteRegistry;
+  const registryApi = globalThis.DrpcSiteRegistryApi;
+
+  let attachedMedia = null;
   let lastSignature = "";
   let lastTimeUpdateSentAt = 0;
 
@@ -16,49 +18,102 @@
     return entries;
   }
 
-  function getPlaybackState(video) {
-    if (!video) {
+  function getMediaElement() {
+    return document.querySelector("video, audio");
+  }
+
+  function getPlaybackState(media) {
+    if (!media) {
       return "idle";
     }
-    if (video.paused || video.ended) {
+    if (media.paused || media.ended) {
       return "paused";
     }
     return "playing";
   }
 
-  function buildSnapshot() {
-    const video = document.querySelector("video");
-    const metadata = adapters.extractMetadata({
-      hostname: location.hostname,
-      title: document.title,
-      pathname: location.pathname,
-      metas: collectMetaTags()
-    });
+  function getPlaybackTimestamps(media, nowUnixSeconds) {
+    if (!media || !Number.isFinite(media.duration) || media.duration <= 0 || !Number.isFinite(media.currentTime) || media.paused || media.ended) {
+      return {};
+    }
+
+    const currentTime = Math.max(0, Math.floor(media.currentTime));
+    const duration = Math.max(currentTime, Math.floor(media.duration));
+    return {
+      startedAtUnixSeconds: nowUnixSeconds - currentTime,
+      endAtUnixSeconds: nowUnixSeconds + (duration - currentTime)
+    };
+  }
+
+  function buildContext() {
+    const media = getMediaElement();
+    const siteDefinition = registry ? registry.findSiteForUrl(location.href) : null;
+    const nowUnixSeconds = Math.floor(Date.now() / 1000);
 
     return {
-      schemaVersion: 1,
+      siteDefinition,
+      location,
+      document,
+      media,
+      metaTags: collectMetaTags(),
+      nowUnixSeconds,
+      playbackState: getPlaybackState(media),
+      playbackTimestamps: getPlaybackTimestamps(media, nowUnixSeconds)
+    };
+  }
+
+  function buildSnapshot() {
+    const context = buildContext();
+    const pageTitle = String(document.title || "").trim();
+
+    if (!context.siteDefinition) {
+      return {
+        schemaVersion: 2,
+        url: location.href,
+        host: location.host,
+        pageTitle,
+        siteId: "",
+        playbackState: context.playbackState,
+        activityDisposition: "clear",
+        activityCard: null,
+        sentAtUnixMs: Date.now()
+      };
+    }
+
+    const result = context.siteDefinition.collectActivity(context);
+    const activityCard = result ? registryApi.sanitizeActivityCard(result.activityCard || result) : null;
+
+    return {
+      schemaVersion: 2,
       url: location.href,
       host: location.host,
-      pageTitle: metadata.pageTitle || document.title || "",
-      siteId: metadata.siteId || "",
-      playbackState: getPlaybackState(video),
-      seriesTitle: metadata.seriesTitle || "",
-      episodeLabel: metadata.episodeLabel || "",
-      positionSeconds: video && Number.isFinite(video.currentTime) ? Math.round(video.currentTime) : null,
-      durationSeconds: video && Number.isFinite(video.duration) ? Math.round(video.duration) : null,
+      pageTitle: String((result && result.pageTitle) || pageTitle).trim(),
+      siteId: context.siteDefinition.metadata.id,
+      playbackState: (result && result.playbackState) || context.playbackState,
+      activityDisposition: activityCard ? "publish" : "clear",
+      activityCard: activityCard || null,
       sentAtUnixMs: Date.now()
     };
   }
 
+  function buildSignature(snapshot) {
+    return JSON.stringify([
+      snapshot.url,
+      snapshot.pageTitle,
+      snapshot.siteId,
+      snapshot.playbackState,
+      snapshot.activityDisposition,
+      snapshot.activityCard && snapshot.activityCard.name,
+      snapshot.activityCard && snapshot.activityCard.details,
+      snapshot.activityCard && snapshot.activityCard.state,
+      snapshot.activityCard && snapshot.activityCard.startedAtUnixSeconds,
+      snapshot.activityCard && snapshot.activityCard.endAtUnixSeconds
+    ]);
+  }
+
   function sendSnapshot(reason) {
     const snapshot = buildSnapshot();
-    const signature = JSON.stringify([
-      snapshot.url,
-      snapshot.playbackState,
-      snapshot.seriesTitle,
-      snapshot.episodeLabel,
-      snapshot.positionSeconds
-    ]);
+    const signature = buildSignature(snapshot);
 
     if (reason !== "timeupdate" && signature === lastSignature) {
       return;
@@ -70,13 +125,13 @@
     });
   }
 
-  function attachToVideo(video) {
-    if (!video || video === attachedVideo) {
+  function attachToMedia(media) {
+    if (!media || media === attachedMedia) {
       return;
     }
 
-    attachedVideo = video;
-    const sendImmediate = () => sendSnapshot("video");
+    attachedMedia = media;
+    const sendImmediate = () => sendSnapshot("media");
     const sendTimeUpdate = () => {
       const now = Date.now();
       if (now - lastTimeUpdateSentAt >= 15000) {
@@ -86,13 +141,29 @@
     };
 
     ["play", "pause", "seeking", "seeked", "loadedmetadata", "ended", "ratechange"].forEach((eventName) => {
-      video.addEventListener(eventName, sendImmediate);
+      media.addEventListener(eventName, sendImmediate);
     });
-    video.addEventListener("timeupdate", sendTimeUpdate);
+    media.addEventListener("timeupdate", sendTimeUpdate);
   }
 
-  function discoverVideo() {
-    attachToVideo(document.querySelector("video"));
+  function discoverMedia() {
+    attachToMedia(getMediaElement());
+  }
+
+  function hookHistoryEvents() {
+    const wrap = (name) => {
+      const original = history[name];
+      history[name] = function() {
+        const result = original.apply(this, arguments);
+        setTimeout(() => sendSnapshot("navigation"), 0);
+        return result;
+      };
+    };
+
+    wrap("pushState");
+    wrap("replaceState");
+    addEventListener("popstate", () => sendSnapshot("navigation"));
+    addEventListener("hashchange", () => sendSnapshot("navigation"));
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -102,13 +173,15 @@
   });
 
   const observer = new MutationObserver(() => {
-    discoverVideo();
+    discoverMedia();
+    sendSnapshot("mutation");
   });
   observer.observe(document.documentElement, {
     childList: true,
     subtree: true
   });
 
-  discoverVideo();
+  hookHistoryEvents();
+  discoverMedia();
   sendSnapshot("init");
 })();

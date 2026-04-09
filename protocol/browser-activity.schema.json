@@ -11,12 +11,13 @@
     "host",
     "pageTitle",
     "playbackState",
+    "activityDisposition",
     "sentAtUnixMs"
   ],
   "properties": {
     "schemaVersion": {
       "type": "integer",
-      "const": 1
+      "const": 2
     },
     "browser": {
       "type": "string",
@@ -33,8 +34,7 @@
       "minLength": 1
     },
     "host": {
-      "type": "string",
-      "minLength": 1
+      "type": "string"
     },
     "pageTitle": {
       "type": "string"
@@ -50,23 +50,68 @@
         "paused"
       ]
     },
-    "seriesTitle": {
-      "type": "string"
-    },
-    "episodeLabel": {
-      "type": "string"
-    },
-    "positionSeconds": {
-      "type": [
-        "number",
-        "null"
+    "activityDisposition": {
+      "type": "string",
+      "enum": [
+        "publish",
+        "sticky",
+        "clear"
       ]
     },
-    "durationSeconds": {
+    "activityCard": {
       "type": [
-        "number",
+        "object",
         "null"
-      ]
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "details": { "type": "string" },
+        "detailsUrl": { "type": "string" },
+        "state": { "type": "string" },
+        "stateUrl": { "type": "string" },
+        "statusDisplayType": {
+          "type": "string",
+          "enum": ["name", "details", "state"]
+        },
+        "showElapsedTime": { "type": "boolean" },
+        "startedAtUnixSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "endAtUnixSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "largeImage": { "type": "string" },
+            "largeText": { "type": "string" },
+            "largeUrl": { "type": "string" },
+            "smallImage": { "type": "string" },
+            "smallText": { "type": "string" },
+            "smallUrl": { "type": "string" }
+          }
+        },
+        "buttons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "url"],
+            "properties": {
+              "label": { "type": "string", "minLength": 1 },
+              "url": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
     },
     "sentAtUnixMs": {
       "type": "integer"

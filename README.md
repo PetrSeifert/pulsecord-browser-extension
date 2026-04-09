@@ -5,8 +5,9 @@ This folder is the standalone Chromium extension side of `drpc`. It is scaffolde
 ## What it does
 
 - Detects the active browser tab
-- Extracts richer metadata from supported anime/video sites
-- Falls back to generic URL/title detection on unsupported sites
+- Loads bundled website definitions and injects only on declared site match patterns
+- Lets each site definition decide which pages should publish activity and how the Discord card is built
+- Keeps the last matched site activity sticky when the active tab is unmatched
 - Sends normalized browser activity snapshots to the native host `com.drpc.browser_host`
 
 ## Supported browsers
@@ -16,10 +17,11 @@ This folder is the standalone Chromium extension side of `drpc`. It is scaffolde
 - Brave
 - Opera
 
-## Supported site adapters in this scaffold
+## Bundled site definitions
 
 - Crunchyroll
 - HIDIVE
+- 9anime
 
 ## Local development
 
