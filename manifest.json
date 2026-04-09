@@ -18,7 +18,8 @@
     "service_worker": "dist/src/background.js"
   },
   "action": {
-    "default_title": "drpc Browser Activity"
+    "default_title": "drpc Browser Activity",
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {

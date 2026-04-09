@@ -9,13 +9,36 @@ importScripts(
 
 const HOST_NAME = "com.drpc.browser_host";
 const HEARTBEAT_ALARM = "drpc-heartbeat";
+const CONFIG_STORAGE_KEY = "drpcSiteConfig";
 
 const root = globalThis as DrpcGlobalRoot;
 const registry = root.DrpcSiteRegistry;
+const siteConfigApi = root.DrpcSiteConfig;
 const stateApi = root.DrpcBackgroundState;
 const cachedSiteSnapshots = new Map<number, DrpcCachedSnapshotEntry>();
 
 let nativePort: chrome.runtime.Port | null = null;
+
+function loadPersistedConfig(): void {
+  if (!siteConfigApi) return;
+  chrome.storage.local.get(CONFIG_STORAGE_KEY, (result) => {
+    const saved = result[CONFIG_STORAGE_KEY];
+    if (saved && typeof saved === "object") {
+      siteConfigApi.setConfig(saved as Record<string, DrpcSiteConfigEntry>);
+    }
+  });
+}
+
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes[CONFIG_STORAGE_KEY] && siteConfigApi) {
+    const newConfig = changes[CONFIG_STORAGE_KEY].newValue;
+    if (newConfig && typeof newConfig === "object") {
+      siteConfigApi.setConfig(newConfig as Record<string, DrpcSiteConfigEntry>);
+    }
+  }
+});
+
+loadPersistedConfig();
 
 async function updateStatus(
   status: "ok" | "wait" | "error",

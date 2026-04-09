@@ -2,6 +2,23 @@
   const root = globalThis as DrpcGlobalRoot;
   const registry = root.DrpcSiteRegistry;
   const registryApi = root.DrpcSiteRegistryApi;
+  const siteConfigApi = root.DrpcSiteConfig;
+
+  // Load persisted site config so user changes apply without page reload.
+  if (siteConfigApi) {
+    chrome.storage.local.get("drpcSiteConfig", (result) => {
+      const saved = result["drpcSiteConfig"];
+      if (saved && typeof saved === "object") {
+        siteConfigApi.setConfig(saved as Record<string, DrpcSiteConfigEntry>);
+      }
+    });
+
+    chrome.storage.onChanged.addListener((changes) => {
+      if (changes["drpcSiteConfig"]?.newValue && typeof changes["drpcSiteConfig"].newValue === "object") {
+        siteConfigApi.setConfig(changes["drpcSiteConfig"].newValue as Record<string, DrpcSiteConfigEntry>);
+      }
+    });
+  }
 
   let attachedMedia: HTMLMediaElement | null = null;
   let lastSignature = "";
