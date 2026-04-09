@@ -1,0 +1,9 @@
+{
+  "name": "drpc-browser-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chromium MV3 extension for drpc browser activity detection",
+  "scripts": {
+    "test": "node --test"
+  }
+}

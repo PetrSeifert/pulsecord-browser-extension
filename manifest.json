@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "drpc Browser Activity",
+  "version": "0.1.0",
+  "description": "Collect browser video activity and forward it to drpc over native messaging.",
+  "permissions": [
+    "alarms",
+    "nativeMessaging",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.crunchyroll.com/*",
+    "https://*.hidive.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "drpc Browser Activity"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.crunchyroll.com/*",
+        "https://*.hidive.com/*"
+      ],
+      "js": [
+        "src/adapters-core.js",
+        "src/content-script.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

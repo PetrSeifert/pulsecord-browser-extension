@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://drpc.dev/schemas/browser-activity.schema.json",
+  "title": "drpc Browser Activity Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "browser",
+    "url",
+    "host",
+    "pageTitle",
+    "playbackState",
+    "sentAtUnixMs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "browser": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tabId": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "url": {
+      "type": "string",
+      "minLength": 1
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pageTitle": {
+      "type": "string"
+    },
+    "siteId": {
+      "type": "string"
+    },
+    "playbackState": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "playing",
+        "paused"
+      ]
+    },
+    "seriesTitle": {
+      "type": "string"
+    },
+    "episodeLabel": {
+      "type": "string"
+    },
+    "positionSeconds": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "durationSeconds": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "sentAtUnixMs": {
+      "type": "integer"
+    }
+  }
+}
