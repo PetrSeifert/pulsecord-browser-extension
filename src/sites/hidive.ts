@@ -64,6 +64,7 @@
             name: split.seriesTitle || "HIDIVE",
             details: split.seriesTitle || cleanTitle(rawTitle) || context.document.title,
             state: split.episodeLabel || "Watching on HIDIVE",
+            type: "watching",
             statusDisplayType: "details",
             showElapsedTime: Boolean(playing && timestamps.startedAtUnixSeconds),
             startedAtUnixSeconds: playing ? timestamps.startedAtUnixSeconds ?? null : null,

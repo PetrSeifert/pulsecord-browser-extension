@@ -163,6 +163,7 @@
       snapshot.activityCard?.name,
       snapshot.activityCard?.details,
       snapshot.activityCard?.state,
+      snapshot.activityCard?.type,
       snapshot.activityCard?.startedAtUnixSeconds,
       snapshot.activityCard?.endAtUnixSeconds
     ]);

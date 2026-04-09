@@ -12,6 +12,7 @@
   globalThis as DrpcGlobalRoot,
   function(): DrpcSiteRegistryApi {
     const globalRoot = globalThis as DrpcGlobalRoot;
+    const ACTIVITY_TYPES: DrpcActivityType[] = ["playing", "watching"];
     const STATUS_DISPLAY_TYPES: DrpcStatusDisplayType[] = ["name", "details", "state"];
     const DEFAULT_SITE_CONFIG: DrpcResolvedSiteConfig = {
       enabled: true,
@@ -153,6 +154,12 @@
         normalized.stateUrl = sanitizeString(overrides.stateUrl);
       }
       if (
+        hasOwn(overrides, "type") &&
+        ACTIVITY_TYPES.includes(overrides.type || "playing")
+      ) {
+        normalized.type = overrides.type;
+      }
+      if (
         hasOwn(overrides, "statusDisplayType") &&
         STATUS_DISPLAY_TYPES.includes(overrides.statusDisplayType || "name")
       ) {
@@ -195,6 +202,9 @@
       const statusDisplayType = STATUS_DISPLAY_TYPES.includes(card.statusDisplayType || "name")
         ? (card.statusDisplayType as DrpcStatusDisplayType)
         : "name";
+      const activityType = ACTIVITY_TYPES.includes(card.type || "playing")
+        ? (card.type as DrpcActivityType)
+        : "playing";
 
       const normalized: DrpcActivityCard = {
         name: sanitizeString(card.name),
@@ -202,6 +212,7 @@
         detailsUrl: sanitizeString(card.detailsUrl),
         state: sanitizeString(card.state),
         stateUrl: sanitizeString(card.stateUrl),
+        type: activityType,
         statusDisplayType,
         showElapsedTime: card.showElapsedTime !== false,
         assets: sanitizeAssets(card.assets),
@@ -242,6 +253,9 @@
         stateUrl: hasOwn(normalizedOverrides, "stateUrl")
           ? normalizedOverrides.stateUrl
           : normalizedCard.stateUrl,
+        type: hasOwn(normalizedOverrides, "type")
+          ? normalizedOverrides.type
+          : normalizedCard.type,
         statusDisplayType: hasOwn(normalizedOverrides, "statusDisplayType")
           ? normalizedOverrides.statusDisplayType
           : normalizedCard.statusDisplayType,

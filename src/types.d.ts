@@ -1,5 +1,6 @@
 type DrpcPlaybackState = "idle" | "paused" | "playing";
 type DrpcActivityDisposition = "publish" | "clear" | "sticky";
+type DrpcActivityType = "playing" | "watching";
 type DrpcStatusDisplayType = "name" | "details" | "state";
 type DrpcSiteSettingValue = string | number | boolean | null;
 
@@ -23,6 +24,7 @@ interface DrpcActivityCard {
   detailsUrl?: string;
   state?: string;
   stateUrl?: string;
+  type?: DrpcActivityType;
   statusDisplayType?: DrpcStatusDisplayType;
   showElapsedTime?: boolean;
   assets?: DrpcActivityAssets;
@@ -37,6 +39,7 @@ interface DrpcActivityCardOverrides {
   detailsUrl?: string;
   state?: string;
   stateUrl?: string;
+  type?: DrpcActivityType;
   statusDisplayType?: DrpcStatusDisplayType;
   showElapsedTime?: boolean;
   assets?: DrpcActivityAssets;

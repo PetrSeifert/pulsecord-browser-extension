@@ -164,6 +164,7 @@
               name: title,
               details: title,
               state: episodeLabel || "Watching on 9anime",
+              type: "watching",
               statusDisplayType: "details",
               showElapsedTime: Boolean(playing && context.playbackTimestamps.startedAtUnixSeconds),
               startedAtUnixSeconds: playing

@@ -26,6 +26,7 @@
         enabled: true,
         // Example:
         // activityOverrides: {
+        //   type: "watching",
         //   state: "Watching anime",
         //   buttons: []
         // },

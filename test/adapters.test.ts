@@ -126,6 +126,7 @@ test("9anime watch page returns a complete activity card", () => {
   assert.ok(activity.activityCard.buttons);
   assert.equal(activity.activityCard.details, "Example Show");
   assert.equal(activity.activityCard.state, "Episode 12");
+  assert.equal(activity.activityCard.type, "watching");
   assert.equal(activity.activityCard.assets.largeImage, "https://cdn.example.com/poster.jpg");
   assert.equal(activity.activityCard.buttons[0].label, "Watch Anime");
   assert.equal(activity.activityCard.startedAtUnixSeconds, 1709999700);
@@ -155,6 +156,7 @@ test("applyActivityOverrides replaces configured activity fields", () => {
       name: "Example Show",
       details: "Example Show",
       state: "Episode 12",
+      type: "playing",
       showElapsedTime: true,
       buttons: [
         {
@@ -166,6 +168,7 @@ test("applyActivityOverrides replaces configured activity fields", () => {
     {
       details: "Custom Details",
       state: "Custom State",
+      type: "watching",
       showElapsedTime: false,
       buttons: []
     }
@@ -174,8 +177,21 @@ test("applyActivityOverrides replaces configured activity fields", () => {
   assert.ok(card);
   assert.equal(card.details, "Custom Details");
   assert.equal(card.state, "Custom State");
+  assert.equal(card.type, "watching");
   assert.equal(card.showElapsedTime, false);
   assert.deepEqual(card.buttons, []);
+});
+
+test("sanitizeActivityCard preserves valid activity type", () => {
+  siteConfig.reset();
+  const card = registryApi.sanitizeActivityCard({
+    details: "Example Show",
+    state: "Episode 12",
+    type: "watching"
+  });
+
+  assert.ok(card);
+  assert.equal(card.type, "watching");
 });
 
 test("sticky cached snapshot survives switching to an undefined tab", () => {
