@@ -1,13 +1,14 @@
 (function() {
-  const registry = globalThis.DrpcSiteRegistry;
-  const registryApi = globalThis.DrpcSiteRegistryApi;
+  const root = globalThis as DrpcGlobalRoot;
+  const registry = root.DrpcSiteRegistry;
+  const registryApi = root.DrpcSiteRegistryApi;
 
-  let attachedMedia = null;
+  let attachedMedia: HTMLMediaElement | null = null;
   let lastSignature = "";
   let lastTimeUpdateSentAt = 0;
 
-  function collectMetaTags() {
-    const entries = {};
+  function collectMetaTags(): Record<string, string> {
+    const entries: Record<string, string> = {};
     for (const element of document.querySelectorAll("meta[property], meta[name]")) {
       const key = element.getAttribute("property") || element.getAttribute("name");
       const value = element.getAttribute("content");
@@ -18,11 +19,11 @@
     return entries;
   }
 
-  function getMediaElement() {
+  function getMediaElement(): HTMLMediaElement | null {
     return document.querySelector("video, audio");
   }
 
-  function getPlaybackState(media) {
+  function getPlaybackState(media: HTMLMediaElement | null): DrpcPlaybackState {
     if (!media) {
       return "idle";
     }
@@ -32,8 +33,18 @@
     return "playing";
   }
 
-  function getPlaybackTimestamps(media, nowUnixSeconds) {
-    if (!media || !Number.isFinite(media.duration) || media.duration <= 0 || !Number.isFinite(media.currentTime) || media.paused || media.ended) {
+  function getPlaybackTimestamps(
+    media: HTMLMediaElement | null,
+    nowUnixSeconds: number
+  ): DrpcPlaybackTimestamps {
+    if (
+      !media ||
+      !Number.isFinite(media.duration) ||
+      media.duration <= 0 ||
+      !Number.isFinite(media.currentTime) ||
+      media.paused ||
+      media.ended
+    ) {
       return {};
     }
 
@@ -45,7 +56,7 @@
     };
   }
 
-  function buildContext() {
+  function buildContext(): DrpcSiteContext {
     const media = getMediaElement();
     const siteDefinition = registry ? registry.findSiteForUrl(location.href) : null;
     const nowUnixSeconds = Math.floor(Date.now() / 1000);
@@ -62,7 +73,17 @@
     };
   }
 
-  function buildSnapshot() {
+  function isActivityResult(
+    result: DrpcSiteActivityResult | DrpcActivityCard | null
+  ): result is DrpcSiteActivityResult {
+    return Boolean(
+      result &&
+      typeof result === "object" &&
+      ("activityCard" in result || "pageTitle" in result || "playbackState" in result)
+    );
+  }
+
+  function buildSnapshot(): DrpcSnapshotMessage {
     const context = buildContext();
     const pageTitle = String(document.title || "").trim();
 
@@ -81,37 +102,41 @@
     }
 
     const result = context.siteDefinition.collectActivity(context);
-    const activityCard = result ? registryApi.sanitizeActivityCard(result.activityCard || result) : null;
+    const activityCard = registryApi
+      ? registryApi.sanitizeActivityCard(
+          isActivityResult(result) ? (result.activityCard ?? null) : result
+        )
+      : null;
 
     return {
       schemaVersion: 2,
       url: location.href,
       host: location.host,
-      pageTitle: String((result && result.pageTitle) || pageTitle).trim(),
+      pageTitle: String((isActivityResult(result) && result.pageTitle) || pageTitle).trim(),
       siteId: context.siteDefinition.metadata.id,
-      playbackState: (result && result.playbackState) || context.playbackState,
+      playbackState: (isActivityResult(result) && result.playbackState) || context.playbackState,
       activityDisposition: activityCard ? "publish" : "clear",
       activityCard: activityCard || null,
       sentAtUnixMs: Date.now()
     };
   }
 
-  function buildSignature(snapshot) {
+  function buildSignature(snapshot: DrpcSnapshotMessage): string {
     return JSON.stringify([
       snapshot.url,
       snapshot.pageTitle,
       snapshot.siteId,
       snapshot.playbackState,
       snapshot.activityDisposition,
-      snapshot.activityCard && snapshot.activityCard.name,
-      snapshot.activityCard && snapshot.activityCard.details,
-      snapshot.activityCard && snapshot.activityCard.state,
-      snapshot.activityCard && snapshot.activityCard.startedAtUnixSeconds,
-      snapshot.activityCard && snapshot.activityCard.endAtUnixSeconds
+      snapshot.activityCard?.name,
+      snapshot.activityCard?.details,
+      snapshot.activityCard?.state,
+      snapshot.activityCard?.startedAtUnixSeconds,
+      snapshot.activityCard?.endAtUnixSeconds
     ]);
   }
 
-  function sendSnapshot(reason) {
+  function sendSnapshot(reason: "init" | "media" | "mutation" | "navigation" | "timeupdate"): void {
     const snapshot = buildSnapshot();
     const signature = buildSignature(snapshot);
 
@@ -125,14 +150,14 @@
     });
   }
 
-  function attachToMedia(media) {
+  function attachToMedia(media: HTMLMediaElement | null): void {
     if (!media || media === attachedMedia) {
       return;
     }
 
     attachedMedia = media;
-    const sendImmediate = () => sendSnapshot("media");
-    const sendTimeUpdate = () => {
+    const sendImmediate = (): void => sendSnapshot("media");
+    const sendTimeUpdate = (): void => {
       const now = Date.now();
       if (now - lastTimeUpdateSentAt >= 15000) {
         lastTimeUpdateSentAt = now;
@@ -140,33 +165,38 @@
       }
     };
 
-    ["play", "pause", "seeking", "seeked", "loadedmetadata", "ended", "ratechange"].forEach((eventName) => {
-      media.addEventListener(eventName, sendImmediate);
-    });
+    ["play", "pause", "seeking", "seeked", "loadedmetadata", "ended", "ratechange"].forEach(
+      (eventName) => {
+        media.addEventListener(eventName, sendImmediate);
+      }
+    );
     media.addEventListener("timeupdate", sendTimeUpdate);
   }
 
-  function discoverMedia() {
+  function discoverMedia(): void {
     attachToMedia(getMediaElement());
   }
 
-  function hookHistoryEvents() {
-    const wrap = (name) => {
-      const original = history[name];
-      history[name] = function() {
-        const result = original.apply(this, arguments);
-        setTimeout(() => sendSnapshot("navigation"), 0);
-        return result;
-      };
+  function hookHistoryEvents(): void {
+    const originalPushState = history.pushState;
+    history.pushState = function(...args) {
+      const result = originalPushState.apply(this, args);
+      setTimeout(() => sendSnapshot("navigation"), 0);
+      return result;
     };
 
-    wrap("pushState");
-    wrap("replaceState");
+    const originalReplaceState = history.replaceState;
+    history.replaceState = function(...args) {
+      const result = originalReplaceState.apply(this, args);
+      setTimeout(() => sendSnapshot("navigation"), 0);
+      return result;
+    };
+
     addEventListener("popstate", () => sendSnapshot("navigation"));
     addEventListener("hashchange", () => sendSnapshot("navigation"));
   }
 
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: { type?: string }, _sender, sendResponse) => {
     if (message?.type === "collectSnapshot") {
       sendResponse({ snapshot: buildSnapshot() });
     }
@@ -176,6 +206,7 @@
     discoverMedia();
     sendSnapshot("mutation");
   });
+
   observer.observe(document.documentElement, {
     childList: true,
     subtree: true

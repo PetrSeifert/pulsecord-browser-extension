@@ -4,6 +4,12 @@
   "private": true,
   "description": "Chromium MV3 extension for drpc browser activity detection",
   "scripts": {
-    "test": "node --test"
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/**/*.test.js"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.40",
+    "@types/node": "^25.5.2",
+    "typescript": "^6.0.2"
   }
 }

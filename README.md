@@ -1,6 +1,8 @@
 # drpc-browser-extension
 
-This folder is the standalone Chromium extension side of `drpc`. It is scaffolded inside the main repo for coordinated development today, and can be moved to its own remote repository or converted into a git submodule later.
+This repository contains the Chromium extension side of `drpc`.
+
+When developed inside the `pulsecord` workspace, this repo lives at `external/drpc-browser-extension`. Some setup steps below call back into the parent `pulsecord` repo because the native host and tray app live there.
 
 ## What it does
 
@@ -25,24 +27,36 @@ This folder is the standalone Chromium extension side of `drpc`. It is scaffolde
 
 ## Local development
 
-1. Build the native host in the main repo:
+Commands in this section specify which directory they should be run from.
+
+1. From the `drpc-browser-extension` repo root, install the extension toolchain and compile the TypeScript sources:
 
 ```powershell
-cmake --build ..\build --config Debug --target drpc_native_host
+npm install
+npm run build
 ```
 
-2. Load this directory as an unpacked extension in your Chromium browser.
-3. Note the extension ID shown on the extensions page.
-4. Register the native host from the main repo:
+2. From the `pulsecord` repo root, build the native host:
 
 ```powershell
-..\..\scripts\Register-NativeHost.ps1 `
-  -HostPath ..\..\build\drpc_native_host.exe `
+cmake --build .\build --config Debug --target drpc_native_host
+```
+
+3. In Chrome, Edge, Brave, or Opera, load the `drpc-browser-extension` repo root as an unpacked extension.
+
+If you are working from the `pulsecord` monorepo checkout, the folder to load is `external/drpc-browser-extension`.
+
+4. Note the extension ID shown on the extensions page.
+5. From the `pulsecord` repo root, register the native host:
+
+```powershell
+.\scripts\Register-NativeHost.ps1 `
+  -HostPath .\build\Debug\drpc_native_host.exe `
   -ExtensionIds <your-extension-id> `
   -Browsers chrome,edge
 ```
 
-5. Start the tray app from the main repo and begin playback on a supported site.
+6. From the `pulsecord` repo root, start the tray app and begin playback on a supported site.
 
 ## Tests
 
@@ -52,7 +66,7 @@ npm test
 
 ## Troubleshooting
 
-- Reload the unpacked extension after changing files in this folder.
+- Re-run `npm run build` and reload the unpacked extension after changing TypeScript files in this folder.
 - Click the extension action once to force an immediate active-tab scan.
 - Check extension status with:
 

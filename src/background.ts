@@ -9,13 +9,17 @@ importScripts(
 const HOST_NAME = "com.drpc.browser_host";
 const HEARTBEAT_ALARM = "drpc-heartbeat";
 
-const registry = globalThis.DrpcSiteRegistry;
-const stateApi = globalThis.DrpcBackgroundState;
-const cachedSiteSnapshots = new Map();
+const root = globalThis as DrpcGlobalRoot;
+const registry = root.DrpcSiteRegistry;
+const stateApi = root.DrpcBackgroundState;
+const cachedSiteSnapshots = new Map<number, DrpcCachedSnapshotEntry>();
 
-let nativePort = null;
+let nativePort: chrome.runtime.Port | null = null;
 
-async function updateStatus(status, details = {}) {
+async function updateStatus(
+  status: "ok" | "wait" | "error",
+  details: Record<string, unknown> = {}
+): Promise<void> {
   const payload = {
     status,
     details,
@@ -34,7 +38,7 @@ async function updateStatus(status, details = {}) {
   chrome.action.setBadgeBackgroundColor({ color: badgeColor });
 }
 
-function detectBrowserName() {
+function detectBrowserName(): "chrome" | "edge" | "opera" {
   const userAgent = navigator.userAgent || "";
   if (userAgent.includes("Edg/")) {
     return "edge";
@@ -45,7 +49,7 @@ function detectBrowserName() {
   return "chrome";
 }
 
-function ensureNativePort() {
+function ensureNativePort(): chrome.runtime.Port {
   if (nativePort) {
     return nativePort;
   }
@@ -54,7 +58,8 @@ function ensureNativePort() {
     nativePort = chrome.runtime.connectNative(HOST_NAME);
     void updateStatus("wait", { message: "Connected to native host. Waiting for browser activity." });
   } catch (error) {
-    void updateStatus("error", { message: `connectNative failed: ${error.message}` });
+    const message = error instanceof Error ? error.message : String(error);
+    void updateStatus("error", { message: `connectNative failed: ${message}` });
     throw error;
   }
 
@@ -71,24 +76,24 @@ function ensureNativePort() {
   return nativePort;
 }
 
-function isInspectableWebUrl(url) {
+function isInspectableWebUrl(url?: string): boolean {
   return String(url || "").startsWith("http://") || String(url || "").startsWith("https://");
 }
 
-function getSiteDefinitionForUrl(url) {
+function getSiteDefinitionForUrl(url?: string): DrpcSiteDefinition | null {
   if (!registry) {
     return null;
   }
 
-  return registry.findSiteForUrl(url);
+  return registry.findSiteForUrl(url || "");
 }
 
-function buildClearSnapshot(tab, siteId = "") {
+function buildClearSnapshot(tab: chrome.tabs.Tab | null, siteId = ""): DrpcSnapshot {
   const url = tab?.url || "";
   let host = "";
   try {
     host = new URL(url).host;
-  } catch (error) {
+  } catch {
     host = "";
   }
 
@@ -107,16 +112,16 @@ function buildClearSnapshot(tab, siteId = "") {
   };
 }
 
-function normalizeSnapshot(snapshot, tab, dispositionOverride = null) {
-  if (!snapshot) {
-    return null;
-  }
-
+function normalizeSnapshot(
+  snapshot: DrpcSnapshotMessage,
+  tab: chrome.tabs.Tab | null,
+  dispositionOverride: DrpcActivityDisposition | null = null
+): DrpcSnapshot {
   const url = snapshot.url || tab?.url || "";
   let host = snapshot.host || "";
   try {
     host = host || new URL(url).host;
-  } catch (error) {
+  } catch {
     host = host || "";
   }
 
@@ -135,8 +140,8 @@ function normalizeSnapshot(snapshot, tab, dispositionOverride = null) {
   };
 }
 
-function cacheSnapshot(snapshot) {
-  if (!snapshot || snapshot.tabId == null) {
+function cacheSnapshot(snapshot: DrpcSnapshot): void {
+  if (!snapshot || snapshot.tabId == null || !stateApi) {
     return;
   }
 
@@ -148,19 +153,19 @@ function cacheSnapshot(snapshot) {
   stateApi.removeCachedSnapshot(cachedSiteSnapshots, snapshot.tabId);
 }
 
-function removeCachedSnapshot(tabId) {
-  if (tabId == null) {
+function removeCachedSnapshot(tabId: number | null | undefined): void {
+  if (tabId == null || !stateApi) {
     return;
   }
 
   stateApi.removeCachedSnapshot(cachedSiteSnapshots, tabId);
 }
 
-function buildStickySnapshot() {
-  return stateApi.selectLatestCachedSnapshot(cachedSiteSnapshots);
+function buildStickySnapshot(): DrpcSnapshot | null {
+  return stateApi ? stateApi.selectLatestCachedSnapshot(cachedSiteSnapshots) : null;
 }
 
-function postSnapshot(snapshot, messageOverride = null) {
+function postSnapshot(snapshot: DrpcSnapshot | null, messageOverride: string | null = null): void {
   if (!snapshot) {
     return;
   }
@@ -177,11 +182,12 @@ function postSnapshot(snapshot, messageOverride = null) {
   } catch (error) {
     nativePort = null;
     console.warn("Failed to post drpc snapshot:", error);
-    void updateStatus("error", { message: `postMessage failed: ${error.message}` });
+    const message = error instanceof Error ? error.message : String(error);
+    void updateStatus("error", { message: `postMessage failed: ${message}` });
   }
 }
 
-async function getActiveTab() {
+async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
   const tabs = await chrome.tabs.query({
     active: true,
     lastFocusedWindow: true
@@ -189,8 +195,8 @@ async function getActiveTab() {
   return tabs[0] || null;
 }
 
-async function requestSnapshotFromTab(tab) {
-  if (!tab?.id || !isInspectableWebUrl(tab.url)) {
+async function requestSnapshotFromTab(tab: chrome.tabs.Tab): Promise<DrpcSnapshot> {
+  if (tab.id == null || !isInspectableWebUrl(tab.url)) {
     return buildClearSnapshot(tab);
   }
 
@@ -200,22 +206,21 @@ async function requestSnapshotFromTab(tab) {
   }
 
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { type: "collectSnapshot" });
+    const response = (await chrome.tabs.sendMessage(tab.id, {
+      type: "collectSnapshot"
+    })) as { snapshot?: DrpcSnapshotMessage } | undefined;
+
     if (response?.snapshot) {
       return normalizeSnapshot(response.snapshot, tab);
     }
-  } catch (error) {
+  } catch {
     // No content script available for this tab.
   }
 
   return buildClearSnapshot(tab, siteDefinition.metadata.id);
 }
 
-async function refreshCachedSnapshotForTab(tabId) {
-  if (tabId == null) {
-    return null;
-  }
-
+async function refreshCachedSnapshotForTab(tabId: number): Promise<DrpcSnapshot | null> {
   try {
     const tab = await chrome.tabs.get(tabId);
     if (!tab || !getSiteDefinitionForUrl(tab.url)) {
@@ -226,31 +231,39 @@ async function refreshCachedSnapshotForTab(tabId) {
     const snapshot = await requestSnapshotFromTab(tab);
     cacheSnapshot(snapshot);
     return snapshot;
-  } catch (error) {
+  } catch {
     removeCachedSnapshot(tabId);
     return null;
   }
 }
 
-async function refreshCachedSnapshots() {
+async function refreshCachedSnapshots(): Promise<void> {
   for (const tabId of Array.from(cachedSiteSnapshots.keys())) {
     await refreshCachedSnapshotForTab(tabId);
   }
 }
 
-async function publishBestAvailableSnapshot(activeTab = null) {
-  const tab = activeTab || await getActiveTab();
+async function publishBestAvailableSnapshot(activeTab: chrome.tabs.Tab | null = null): Promise<void> {
+  const tab = activeTab || (await getActiveTab());
 
   if (!tab) {
     const stickySnapshot = buildStickySnapshot();
-    postSnapshot(stickySnapshot || buildClearSnapshot(null), stickySnapshot ? "Using sticky matched browser activity." : "No active browser tab.");
+    postSnapshot(
+      stickySnapshot || buildClearSnapshot(null),
+      stickySnapshot ? "Using sticky matched browser activity." : "No active browser tab."
+    );
     return;
   }
 
   if (!isInspectableWebUrl(tab.url)) {
     removeCachedSnapshot(tab.id);
     const stickySnapshot = buildStickySnapshot();
-    postSnapshot(stickySnapshot || buildClearSnapshot(tab), stickySnapshot ? "Using sticky matched browser activity." : "Active tab is not an inspectable web page.");
+    postSnapshot(
+      stickySnapshot || buildClearSnapshot(tab),
+      stickySnapshot
+        ? "Using sticky matched browser activity."
+        : "Active tab is not an inspectable web page."
+    );
     return;
   }
 
@@ -263,7 +276,12 @@ async function publishBestAvailableSnapshot(activeTab = null) {
   }
 
   const stickySnapshot = buildStickySnapshot();
-  postSnapshot(stickySnapshot || snapshot, stickySnapshot ? "Using sticky matched browser activity." : "No matched browser activity for the active tab.");
+  postSnapshot(
+    stickySnapshot || snapshot,
+    stickySnapshot
+      ? "Using sticky matched browser activity."
+      : "No matched browser activity for the active tab."
+  );
 }
 
 chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 1 });
@@ -295,7 +313,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     removeCachedSnapshot(tabId);
   }
 
-  if (cachedSiteSnapshots.has(tabId) && (changeInfo.status === "complete" || changeInfo.url)) {
+  if (cachedSiteSnapshots.has(tabId) && (changeInfo.status === "complete" || Boolean(changeInfo.url))) {
     void refreshCachedSnapshotForTab(tabId).then(() => {
       if (tab.active) {
         return publishBestAvailableSnapshot(tab);
@@ -305,7 +323,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     return;
   }
 
-  if (tab.active && (changeInfo.status === "complete" || changeInfo.url)) {
+  if (tab.active && (changeInfo.status === "complete" || Boolean(changeInfo.url))) {
     void publishBestAvailableSnapshot(tab);
   }
 });
@@ -326,8 +344,12 @@ chrome.action.onClicked.addListener(() => {
   void publishBestAvailableSnapshot();
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== "snapshot" || !sender.tab) {
+chrome.runtime.onMessage.addListener((
+  message: { type?: string; snapshot?: DrpcSnapshotMessage },
+  sender,
+  sendResponse
+) => {
+  if (message?.type !== "snapshot" || !sender.tab || !message.snapshot) {
     return;
   }
 
@@ -339,7 +361,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       postSnapshot(snapshot);
     } else {
       const stickySnapshot = buildStickySnapshot();
-      postSnapshot(stickySnapshot || snapshot, stickySnapshot ? "Using sticky matched browser activity." : "No matched browser activity for the active tab.");
+      postSnapshot(
+        stickySnapshot || snapshot,
+        stickySnapshot
+          ? "Using sticky matched browser activity."
+          : "No matched browser activity for the active tab."
+      );
     }
   }
 

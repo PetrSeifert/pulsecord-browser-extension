@@ -15,7 +15,7 @@
     "https://*.9animetv.to/*"
   ],
   "background": {
-    "service_worker": "src/background.js"
+    "service_worker": "dist/src/background.js"
   },
   "action": {
     "default_title": "drpc Browser Activity"
@@ -28,11 +28,11 @@
         "https://*.9animetv.to/*"
       ],
       "js": [
-        "src/site-registry.js",
-        "src/sites/crunchyroll.js",
-        "src/sites/hidive.js",
-        "src/sites/9anime.js",
-        "src/content-script.js"
+        "dist/src/site-registry.js",
+        "dist/src/sites/crunchyroll.js",
+        "dist/src/sites/hidive.js",
+        "dist/src/sites/9anime.js",
+        "dist/src/content-script.js"
       ],
       "run_at": "document_idle"
     }

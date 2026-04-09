@@ -1,35 +1,59 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
+import test from "node:test";
+import assert from "node:assert/strict";
 
-const registryApi = require("../src/site-registry.js");
-const backgroundState = require("../src/background-state.js");
-const anime9 = require("../src/sites/9anime.js");
+const registryApi = require("../src/site-registry.js") as DrpcSiteRegistryApi;
+const backgroundState = require("../src/background-state.js") as DrpcBackgroundStateApi;
+const anime9 = require("../src/sites/9anime.js") as DrpcSiteDefinition;
+
+function createSiteContext(
+  overrides: Partial<DrpcSiteContext>
+): DrpcSiteContext {
+  return {
+    siteDefinition: anime9,
+    location: {
+      href: "https://www.9animetv.to/",
+      pathname: "/",
+      search: ""
+    },
+    document: {
+      title: "",
+      querySelector() {
+        return null;
+      }
+    },
+    media: null,
+    metaTags: {},
+    nowUnixSeconds: 1710000000,
+    playbackState: "idle",
+    playbackTimestamps: {},
+    ...overrides
+  };
+}
 
 test("site registry matches only declared hosts", () => {
   const registry = registryApi.createRegistry();
   registry.registerSite(anime9);
 
-  assert.equal(registry.findSiteForUrl("https://www.9animetv.to/watch/example").metadata.id, "9anime");
+  const matchedSite = registry.findSiteForUrl("https://www.9animetv.to/watch/example");
+  assert.ok(matchedSite);
+  assert.equal(matchedSite.metadata.id, "9anime");
   assert.equal(registry.findSiteForUrl("https://example.com/watch/example"), null);
 });
 
 test("9anime returns null for undefined pages", () => {
-  const activity = anime9.collectActivity({
+  const activity = anime9.collectActivity(createSiteContext({
     location: {
       href: "https://www.9animetv.to/random",
       pathname: "/random",
       search: ""
     },
-    nowUnixSeconds: 1710000000,
-    playbackState: "idle",
-    playbackTimestamps: {},
     document: {
       title: "Random",
       querySelector() {
         return null;
       }
     }
-  });
+  }));
 
   assert.equal(activity, null);
 });
@@ -37,7 +61,7 @@ test("9anime returns null for undefined pages", () => {
 test("9anime watch page returns a complete activity card", () => {
   const documentMock = {
     title: "Watch Example Show online free on 9anime",
-    querySelector(selector) {
+    querySelector(selector: string) {
       if (selector === ".film-infor .film-name.dynamic-name") {
         return { textContent: "Example Show" };
       }
@@ -57,21 +81,23 @@ test("9anime watch page returns a complete activity card", () => {
     }
   };
 
-  const activity = anime9.collectActivity({
+  const activity = anime9.collectActivity(createSiteContext({
     location: {
       href: "https://www.9animetv.to/watch/example",
       pathname: "/watch/example",
       search: ""
     },
-    nowUnixSeconds: 1710000000,
     playbackState: "playing",
     playbackTimestamps: {
       startedAtUnixSeconds: 1709999700,
       endAtUnixSeconds: 1710001200
     },
     document: documentMock
-  });
+  }));
 
+  assert.ok(activity && "activityCard" in activity && activity.activityCard);
+  assert.ok(activity.activityCard.assets);
+  assert.ok(activity.activityCard.buttons);
   assert.equal(activity.activityCard.details, "Example Show");
   assert.equal(activity.activityCard.state, "Episode 12");
   assert.equal(activity.activityCard.assets.largeImage, "https://cdn.example.com/poster.jpg");
@@ -89,32 +115,46 @@ test("sanitizeActivityCard preserves remote image URLs", () => {
     }
   });
 
+  assert.ok(card);
+  assert.ok(card.assets);
   assert.equal(card.assets.largeImage, "https://cdn.example.com/poster.jpg");
   assert.equal(card.assets.largeUrl, "https://www.9animetv.to/watch/example");
 });
 
 test("sticky cached snapshot survives switching to an undefined tab", () => {
-  const cache = new Map();
+  const cache = new Map<number, DrpcCachedSnapshotEntry>();
   backgroundState.upsertCachedSnapshot(cache, {
+    schemaVersion: 2,
+    browser: "chrome",
     tabId: 9,
+    url: "https://www.9animetv.to/watch/example",
+    host: "www.9animetv.to",
     siteId: "9anime",
     pageTitle: "Example Show",
+    playbackState: "playing",
     activityDisposition: "publish",
     activityCard: { details: "Example Show" },
     sentAtUnixMs: 100
   });
 
   const sticky = backgroundState.selectLatestCachedSnapshot(cache);
+  assert.ok(sticky);
+  assert.ok(sticky.activityCard);
   assert.equal(sticky.activityDisposition, "sticky");
   assert.equal(sticky.activityCard.details, "Example Show");
 });
 
 test("sticky cache clears when the matched source tab is removed", () => {
-  const cache = new Map();
+  const cache = new Map<number, DrpcCachedSnapshotEntry>();
   backgroundState.upsertCachedSnapshot(cache, {
+    schemaVersion: 2,
+    browser: "chrome",
     tabId: 9,
+    url: "https://www.9animetv.to/watch/example",
+    host: "www.9animetv.to",
     siteId: "9anime",
     pageTitle: "Example Show",
+    playbackState: "playing",
     activityDisposition: "publish",
     activityCard: { details: "Example Show" },
     sentAtUnixMs: 100
