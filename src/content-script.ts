@@ -59,10 +59,19 @@
   function buildContext(): DrpcSiteContext {
     const media = getMediaElement();
     const siteDefinition = registry ? registry.findSiteForUrl(location.href) : null;
+    const siteConfig =
+      siteDefinition && registryApi
+        ? registryApi.getSiteConfig(siteDefinition.metadata.id)
+        : {
+            enabled: true,
+            settings: {},
+            activityOverrides: {}
+          };
     const nowUnixSeconds = Math.floor(Date.now() / 1000);
 
     return {
       siteDefinition,
+      siteConfig,
       location,
       document,
       media,
@@ -102,11 +111,17 @@
     }
 
     const result = context.siteDefinition.collectActivity(context);
-    const activityCard = registryApi
+    const collectedCard = registryApi
       ? registryApi.sanitizeActivityCard(
           isActivityResult(result) ? (result.activityCard ?? null) : result
         )
       : null;
+    const activityCard = registryApi
+      ? registryApi.applyActivityOverrides(
+          collectedCard,
+          context.siteConfig.activityOverrides
+        )
+      : collectedCard;
 
     return {
       schemaVersion: 2,

@@ -1,4 +1,5 @@
 importScripts(
+  "../../site-config.js",
   "background-state.js",
   "site-registry.js",
   "sites/crunchyroll.js",

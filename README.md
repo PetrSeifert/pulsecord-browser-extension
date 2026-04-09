@@ -8,6 +8,7 @@ When developed inside the `pulsecord` workspace, this repo lives at `external/dr
 
 - Detects the active browser tab
 - Loads bundled website definitions and injects only on declared site match patterns
+- Reads `site-config.js` so each bundled site can be enabled or disabled independently
 - Lets each site definition decide which pages should publish activity and how the Discord card is built
 - Keeps the last matched site activity sticky when the active tab is unmatched
 - Sends normalized browser activity snapshots to the native host `com.drpc.browser_host`
@@ -24,6 +25,16 @@ When developed inside the `pulsecord` workspace, this repo lives at `external/dr
 - Crunchyroll
 - HIDIVE
 - 9anime
+
+## Site configuration
+
+Edit `site-config.js` in the extension root, then reload the unpacked extension.
+
+Each site entry supports:
+
+- `enabled`: turns detection for that site on or off before the registry matches it
+- `settings`: a free-form per-site settings bag available to site adapters
+- `activityOverrides`: partial card overrides such as `name`, `details`, `state`, `buttons`, `assets`, and `showElapsedTime`
 
 ## Local development
 

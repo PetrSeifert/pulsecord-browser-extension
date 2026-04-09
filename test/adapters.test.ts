@@ -1,15 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 
 const registryApi = require("../src/site-registry.js") as DrpcSiteRegistryApi;
 const backgroundState = require("../src/background-state.js") as DrpcBackgroundStateApi;
 const anime9 = require("../src/sites/9anime.js") as DrpcSiteDefinition;
+const siteConfig = require(path.resolve(__dirname, "../../site-config.js")) as DrpcSiteConfigApi;
+
+test.afterEach(() => {
+  siteConfig.reset();
+});
 
 function createSiteContext(
   overrides: Partial<DrpcSiteContext>
 ): DrpcSiteContext {
   return {
     siteDefinition: anime9,
+    siteConfig: {
+      enabled: true,
+      settings: {},
+      activityOverrides: {}
+    },
     location: {
       href: "https://www.9animetv.to/",
       pathname: "/",
@@ -31,6 +42,7 @@ function createSiteContext(
 }
 
 test("site registry matches only declared hosts", () => {
+  siteConfig.reset();
   const registry = registryApi.createRegistry();
   registry.registerSite(anime9);
 
@@ -38,6 +50,20 @@ test("site registry matches only declared hosts", () => {
   assert.ok(matchedSite);
   assert.equal(matchedSite.metadata.id, "9anime");
   assert.equal(registry.findSiteForUrl("https://example.com/watch/example"), null);
+});
+
+test("site registry skips disabled sites", () => {
+  siteConfig.setConfig({
+    "9anime": {
+      enabled: false
+    }
+  });
+
+  const registry = registryApi.createRegistry();
+  registry.registerSite(anime9);
+
+  assert.equal(registry.findSiteForUrl("https://www.9animetv.to/watch/example"), null);
+  siteConfig.reset();
 });
 
 test("9anime returns null for undefined pages", () => {
@@ -106,6 +132,7 @@ test("9anime watch page returns a complete activity card", () => {
 });
 
 test("sanitizeActivityCard preserves remote image URLs", () => {
+  siteConfig.reset();
   const card = registryApi.sanitizeActivityCard({
     details: "Example Show",
     state: "Episode 12",
@@ -119,6 +146,36 @@ test("sanitizeActivityCard preserves remote image URLs", () => {
   assert.ok(card.assets);
   assert.equal(card.assets.largeImage, "https://cdn.example.com/poster.jpg");
   assert.equal(card.assets.largeUrl, "https://www.9animetv.to/watch/example");
+});
+
+test("applyActivityOverrides replaces configured activity fields", () => {
+  siteConfig.reset();
+  const card = registryApi.applyActivityOverrides(
+    {
+      name: "Example Show",
+      details: "Example Show",
+      state: "Episode 12",
+      showElapsedTime: true,
+      buttons: [
+        {
+          label: "Watch Anime",
+          url: "https://www.9animetv.to/watch/example"
+        }
+      ]
+    },
+    {
+      details: "Custom Details",
+      state: "Custom State",
+      showElapsedTime: false,
+      buttons: []
+    }
+  );
+
+  assert.ok(card);
+  assert.equal(card.details, "Custom Details");
+  assert.equal(card.state, "Custom State");
+  assert.equal(card.showElapsedTime, false);
+  assert.deepEqual(card.buttons, []);
 });
 
 test("sticky cached snapshot survives switching to an undefined tab", () => {

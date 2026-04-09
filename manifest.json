@@ -28,6 +28,7 @@
         "https://*.9animetv.to/*"
       ],
       "js": [
+        "site-config.js",
         "dist/src/site-registry.js",
         "dist/src/sites/crunchyroll.js",
         "dist/src/sites/hidive.js",

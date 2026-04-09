@@ -1,6 +1,7 @@
 type DrpcPlaybackState = "idle" | "paused" | "playing";
 type DrpcActivityDisposition = "publish" | "clear" | "sticky";
 type DrpcStatusDisplayType = "name" | "details" | "state";
+type DrpcSiteSettingValue = string | number | boolean | null;
 
 interface DrpcActivityButton {
   label?: string;
@@ -28,6 +29,32 @@ interface DrpcActivityCard {
   buttons?: DrpcActivityButton[];
   startedAtUnixSeconds?: number | null;
   endAtUnixSeconds?: number | null;
+}
+
+interface DrpcActivityCardOverrides {
+  name?: string;
+  details?: string;
+  detailsUrl?: string;
+  state?: string;
+  stateUrl?: string;
+  statusDisplayType?: DrpcStatusDisplayType;
+  showElapsedTime?: boolean;
+  assets?: DrpcActivityAssets;
+  buttons?: DrpcActivityButton[];
+  startedAtUnixSeconds?: number | null;
+  endAtUnixSeconds?: number | null;
+}
+
+interface DrpcSiteConfigEntry {
+  enabled?: boolean;
+  settings?: Record<string, DrpcSiteSettingValue>;
+  activityOverrides?: DrpcActivityCardOverrides;
+}
+
+interface DrpcResolvedSiteConfig {
+  enabled: boolean;
+  settings: Record<string, DrpcSiteSettingValue>;
+  activityOverrides: DrpcActivityCardOverrides;
 }
 
 interface DrpcSnapshotMessage {
@@ -79,6 +106,7 @@ interface DrpcSiteActivityResult {
 
 interface DrpcSiteContext {
   siteDefinition: DrpcSiteDefinition | null;
+  siteConfig: DrpcResolvedSiteConfig;
   location: DrpcLocationLike;
   document: DrpcDocumentLike;
   media: HTMLMediaElement | null;
@@ -106,7 +134,19 @@ interface DrpcSiteRegistryRuntime {
 interface DrpcSiteRegistryApi {
   createRegistry(): DrpcSiteRegistryRuntime;
   matchesPattern(url: string, pattern: string): boolean;
+  getSiteConfig(siteId: string): DrpcResolvedSiteConfig;
   sanitizeActivityCard(card: DrpcActivityCard | null | undefined): DrpcActivityCard | null;
+  applyActivityOverrides(
+    card: DrpcActivityCard | null | undefined,
+    overrides: DrpcActivityCardOverrides | null | undefined
+  ): DrpcActivityCard | null;
+}
+
+interface DrpcSiteConfigApi {
+  getSiteConfig(siteId: string): DrpcSiteConfigEntry;
+  getAllSiteConfigs(): Record<string, DrpcSiteConfigEntry>;
+  setConfig(config: Record<string, DrpcSiteConfigEntry>): void;
+  reset(): void;
 }
 
 interface DrpcBackgroundStateApi {
@@ -125,6 +165,7 @@ interface DrpcBackgroundStateApi {
 type DrpcGlobalRoot = typeof globalThis & {
   DrpcSiteRegistryApi?: DrpcSiteRegistryApi;
   DrpcSiteRegistry?: DrpcSiteRegistryRuntime;
+  DrpcSiteConfig?: DrpcSiteConfigApi;
   DrpcBackgroundState?: DrpcBackgroundStateApi;
 };
 
