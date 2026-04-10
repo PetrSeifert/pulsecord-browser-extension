@@ -17,9 +17,7 @@
       "watching",
       "listening",
       "streaming",
-      "customStatus",
-      "competing",
-      "hangStatus"
+      "competing"
     ];
     const STATUS_DISPLAY_TYPES: DrpcStatusDisplayType[] = ["name", "details", "state"];
     const DEFAULT_SITE_CONFIG: DrpcResolvedSiteConfig = {

@@ -142,7 +142,7 @@ test("9anime watch page returns a complete activity card", () => {
   assert.ok(activity.activityCard.buttons);
   assert.equal(activity.activityCard.details, "Watching: Example Show");
   assert.equal(activity.activityCard.state, "Episode 12");
-  assert.equal(activity.activityCard.type, "listening");
+  assert.equal(activity.activityCard.type, "watching");
   assert.equal(activity.activityCard.assets.largeImage, "https://cdn.example.com/poster.jpg");
   assert.equal(activity.activityCard.assets.smallImage, "playing");
   assert.equal(activity.activityCard.assets.smallText, "Playing");

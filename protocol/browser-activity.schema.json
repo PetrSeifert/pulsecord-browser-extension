@@ -72,7 +72,7 @@
         "stateUrl": { "type": "string" },
         "type": {
           "type": "string",
-          "enum": ["playing", "watching", "listening", "streaming", "customStatus", "competing", "hangStatus"]
+          "enum": ["playing", "watching", "listening", "streaming", "competing"]
         },
         "statusDisplayType": {
           "type": "string",

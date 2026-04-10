@@ -1,6 +1,6 @@
 type DrpcPlaybackState = "idle" | "paused" | "playing";
 type DrpcActivityDisposition = "publish" | "clear" | "sticky";
-type DrpcActivityType = "playing" | "watching" | "listening" | "streaming" | "customStatus" | "competing" | "hangStatus" ;
+type DrpcActivityType = "playing" | "watching" | "listening" | "streaming" | "competing" ;
 type DrpcStatusDisplayType = "name" | "details" | "state";
 type DrpcSiteSettingValue = string | number | boolean | null;
 
