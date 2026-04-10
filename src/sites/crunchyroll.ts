@@ -10,6 +10,8 @@
   globalThis as DrpcGlobalRoot,
   function(): DrpcSiteDefinition {
     const LOGO_URL = "https://static.crunchyroll.com/favicons/favicon-32x32.png";
+    const PLAYING_ASSET = "playing";
+    const PAUSED_ASSET = "paused";
 
     function cleanTitle(title: string): string {
       return String(title || "")
@@ -64,7 +66,7 @@
             name: split.seriesTitle || "Crunchyroll",
             details: split.seriesTitle || cleanTitle(rawTitle) || context.document.title,
             state: split.episodeLabel || "Watching on Crunchyroll",
-            type: "watching",
+            type: "listening",
             statusDisplayType: "details",
             showElapsedTime: Boolean(playing && timestamps.startedAtUnixSeconds),
             startedAtUnixSeconds: playing ? timestamps.startedAtUnixSeconds ?? null : null,
@@ -72,7 +74,9 @@
             assets: {
               largeImage: context.metaTags["og:image"] || LOGO_URL,
               largeText: split.episodeLabel || "Crunchyroll",
-              largeUrl: context.location.href
+              largeUrl: context.location.href,
+              smallImage: playing ? PLAYING_ASSET : PAUSED_ASSET,
+              smallText: playing ? "Playing" : "Paused"
             },
             buttons: [
               {

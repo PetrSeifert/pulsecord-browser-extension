@@ -76,10 +76,16 @@
     for (const id of Object.keys(DEFAULT_CONFIG)) {
       const def = DEFAULT_CONFIG[id];
       const src = saved[id] || {};
+      const activityOverrides = Object.assign({}, def.activityOverrides, src.activityOverrides || {});
+
+      // Legacy popup builds stored a type override. The current UI no longer
+      // exposes it, so keep it from silently overriding site adapters.
+      delete activityOverrides.type;
+
       merged[id] = {
         enabled: src.enabled !== undefined ? src.enabled : def.enabled,
         settings: Object.assign({}, def.settings, src.settings || {}),
-        activityOverrides: Object.assign({}, def.activityOverrides, src.activityOverrides || {})
+        activityOverrides
       };
     }
     return merged;

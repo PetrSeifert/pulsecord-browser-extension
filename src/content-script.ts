@@ -3,6 +3,9 @@
   const registry = root.DrpcSiteRegistry;
   const registryApi = root.DrpcSiteRegistryApi;
   const siteConfigApi = root.DrpcSiteConfig;
+  const FRAME_MEDIA_MESSAGE_TYPE = "drpc-frame-media";
+  const EMBEDDED_PLAYBACK_TTL_MS = 30000;
+  const isTopFrame = window.top === window;
 
   // Load persisted site config so user changes apply without page reload.
   if (siteConfigApi) {
@@ -23,6 +26,8 @@
   let attachedMedia: HTMLMediaElement | null = null;
   let lastSignature = "";
   let lastTimeUpdateSentAt = 0;
+  let lastFramePlaybackSignature = "";
+  let embeddedPlayback: DrpcEmbeddedPlayback | null = null;
 
   function collectMetaTags(): Record<string, string> {
     const entries: Record<string, string> = {};
@@ -50,27 +55,64 @@
     return "playing";
   }
 
-  function getPlaybackTimestamps(
-    media: HTMLMediaElement | null,
-    nowUnixSeconds: number
-  ): DrpcPlaybackTimestamps {
+  function getPlaybackSample(
+    media: HTMLMediaElement | null
+  ): { currentTime: number; duration: number; paused: boolean } | null {
     if (
       !media ||
       !Number.isFinite(media.duration) ||
       media.duration <= 0 ||
-      !Number.isFinite(media.currentTime) ||
-      media.paused ||
-      media.ended
+      !Number.isFinite(media.currentTime)
     ) {
+      return null;
+    }
+
+    return {
+      currentTime: Math.max(0, media.currentTime),
+      duration: Math.max(media.currentTime, media.duration),
+      paused: media.paused || media.ended
+    };
+  }
+
+  function getPlaybackTimestampsFromSample(
+    sample: { currentTime: number; duration: number } | null,
+    nowUnixSeconds: number
+  ): DrpcPlaybackTimestamps {
+    if (!sample) {
       return {};
     }
 
-    const currentTime = Math.max(0, Math.floor(media.currentTime));
-    const duration = Math.max(currentTime, Math.floor(media.duration));
+    const currentTime = Math.max(0, Math.floor(sample.currentTime));
+    const duration = Math.max(currentTime, Math.floor(sample.duration));
     return {
       startedAtUnixSeconds: nowUnixSeconds - currentTime,
       endAtUnixSeconds: nowUnixSeconds + (duration - currentTime)
     };
+  }
+
+  function getPlaybackTimestamps(
+    media: HTMLMediaElement | null,
+    nowUnixSeconds: number
+  ): DrpcPlaybackTimestamps {
+    const sample = getPlaybackSample(media);
+    if (!sample || sample.paused) {
+      return {};
+    }
+
+    return getPlaybackTimestampsFromSample(sample, nowUnixSeconds);
+  }
+
+  function getEmbeddedPlayback(nowUnixMs: number): DrpcEmbeddedPlayback | null {
+    if (!embeddedPlayback) {
+      return null;
+    }
+
+    if (nowUnixMs - embeddedPlayback.receivedAtUnixMs > EMBEDDED_PLAYBACK_TTL_MS) {
+      embeddedPlayback = null;
+      return null;
+    }
+
+    return embeddedPlayback;
   }
 
   function buildContext(): DrpcSiteContext {
@@ -84,7 +126,8 @@
             settings: {},
             activityOverrides: {}
           };
-    const nowUnixSeconds = Math.floor(Date.now() / 1000);
+    const nowUnixMs = Date.now();
+    const nowUnixSeconds = Math.floor(nowUnixMs / 1000);
 
     return {
       siteDefinition,
@@ -95,7 +138,8 @@
       metaTags: collectMetaTags(),
       nowUnixSeconds,
       playbackState: getPlaybackState(media),
-      playbackTimestamps: getPlaybackTimestamps(media, nowUnixSeconds)
+      playbackTimestamps: getPlaybackTimestamps(media, nowUnixSeconds),
+      embeddedPlayback: getEmbeddedPlayback(nowUnixMs)
     };
   }
 
@@ -170,6 +214,10 @@
   }
 
   function sendSnapshot(reason: "init" | "media" | "mutation" | "navigation" | "timeupdate"): void {
+    if (!isTopFrame) {
+      return;
+    }
+
     const snapshot = buildSnapshot();
     const signature = buildSignature(snapshot);
 
@@ -178,9 +226,108 @@
     }
 
     lastSignature = signature;
+    console.log("[drpc] outgoing snapshot", snapshot);
     chrome.runtime.sendMessage({ type: "snapshot", snapshot }, () => {
       void chrome.runtime.lastError;
     });
+  }
+
+  function clearEmbeddedPlayback(sourceUrl?: string): void {
+    if (!embeddedPlayback) {
+      return;
+    }
+
+    if (sourceUrl && embeddedPlayback.sourceUrl && embeddedPlayback.sourceUrl !== sourceUrl) {
+      return;
+    }
+
+    embeddedPlayback = null;
+    sendSnapshot("media");
+  }
+
+  function postFramePlayback(force = false): void {
+    if (isTopFrame) {
+      return;
+    }
+
+    const sample = getPlaybackSample(getMediaElement());
+    const signature = sample
+      ? JSON.stringify({
+          currentTime: Math.floor(sample.currentTime),
+          duration: Math.floor(sample.duration),
+          paused: sample.paused,
+          href: location.href
+        })
+      : JSON.stringify({ clear: true, href: location.href });
+
+    if (!force && signature === lastFramePlaybackSignature) {
+      return;
+    }
+
+    lastFramePlaybackSignature = signature;
+    window.parent.postMessage(
+      sample
+        ? {
+            type: FRAME_MEDIA_MESSAGE_TYPE,
+            href: location.href,
+            currentTime: sample.currentTime,
+            duration: sample.duration,
+            paused: sample.paused
+          }
+        : {
+            type: FRAME_MEDIA_MESSAGE_TYPE,
+            href: location.href,
+            clear: true
+          },
+      "*"
+    );
+  }
+
+  function handleEmbeddedPlaybackMessage(event: MessageEvent): void {
+    if (!isTopFrame || event.source === window) {
+      return;
+    }
+
+    const data = event.data;
+    if (!data || typeof data !== "object" || data["type"] !== FRAME_MEDIA_MESSAGE_TYPE) {
+      return;
+    }
+
+    const sourceUrl = typeof data["href"] === "string" ? data["href"] : undefined;
+    if (data["clear"] === true) {
+      clearEmbeddedPlayback(sourceUrl);
+      return;
+    }
+
+    const currentTime = Number(data["currentTime"]);
+    const duration = Number(data["duration"]);
+    if (!Number.isFinite(currentTime) || !Number.isFinite(duration) || duration <= 0) {
+      return;
+    }
+
+    const paused = Boolean(data["paused"]);
+    const nowUnixMs = Date.now();
+    const timestamps = paused
+      ? {}
+      : getPlaybackTimestampsFromSample(
+          {
+            currentTime: Math.max(0, currentTime),
+            duration: Math.max(currentTime, duration)
+          },
+          Math.floor(nowUnixMs / 1000)
+        );
+
+    embeddedPlayback = {
+      currentTime: Math.max(0, currentTime),
+      duration: Math.max(currentTime, duration),
+      paused,
+      startedAtUnixSeconds: timestamps.startedAtUnixSeconds,
+      endAtUnixSeconds: timestamps.endAtUnixSeconds,
+      receivedAtUnixMs: nowUnixMs,
+      sourceUrl
+    };
+
+    sendSnapshot("media");
   }
 
   function attachToMedia(media: HTMLMediaElement | null): void {
@@ -189,12 +336,24 @@
     }
 
     attachedMedia = media;
-    const sendImmediate = (): void => sendSnapshot("media");
+    const sendImmediate = (): void => {
+      if (isTopFrame) {
+        sendSnapshot("media");
+        return;
+      }
+
+      postFramePlayback(true);
+    };
     const sendTimeUpdate = (): void => {
       const now = Date.now();
       if (now - lastTimeUpdateSentAt >= 15000) {
         lastTimeUpdateSentAt = now;
-        sendSnapshot("timeupdate");
+        if (isTopFrame) {
+          sendSnapshot("timeupdate");
+          return;
+        }
+
+        postFramePlayback(false);
       }
     };
 
@@ -214,6 +373,7 @@
     const originalPushState = history.pushState;
     history.pushState = function(...args) {
       const result = originalPushState.apply(this, args);
+      embeddedPlayback = null;
       setTimeout(() => sendSnapshot("navigation"), 0);
       return result;
     };
@@ -221,23 +381,38 @@
     const originalReplaceState = history.replaceState;
     history.replaceState = function(...args) {
       const result = originalReplaceState.apply(this, args);
+      embeddedPlayback = null;
       setTimeout(() => sendSnapshot("navigation"), 0);
       return result;
     };
 
-    addEventListener("popstate", () => sendSnapshot("navigation"));
-    addEventListener("hashchange", () => sendSnapshot("navigation"));
+    addEventListener("popstate", () => {
+      embeddedPlayback = null;
+      sendSnapshot("navigation");
+    });
+    addEventListener("hashchange", () => {
+      embeddedPlayback = null;
+      sendSnapshot("navigation");
+    });
   }
 
-  chrome.runtime.onMessage.addListener((message: { type?: string }, _sender, sendResponse) => {
-    if (message?.type === "collectSnapshot") {
-      sendResponse({ snapshot: buildSnapshot() });
-    }
-  });
+  if (isTopFrame) {
+    window.addEventListener("message", handleEmbeddedPlaybackMessage);
+    chrome.runtime.onMessage.addListener((message: { type?: string }, _sender, sendResponse) => {
+      if (message?.type === "collectSnapshot") {
+        sendResponse({ snapshot: buildSnapshot() });
+      }
+    });
+  }
 
   const observer = new MutationObserver(() => {
     discoverMedia();
-    sendSnapshot("mutation");
+    if (isTopFrame) {
+      sendSnapshot("mutation");
+      return;
+    }
+
+    postFramePlayback(false);
   });
 
   observer.observe(document.documentElement, {
@@ -247,5 +422,14 @@
 
   hookHistoryEvents();
   discoverMedia();
-  sendSnapshot("init");
+
+  if (isTopFrame) {
+    sendSnapshot("init");
+  } else {
+    postFramePlayback(true);
+    setInterval(() => {
+      discoverMedia();
+      postFramePlayback(false);
+    }, 1000);
+  }
 })();

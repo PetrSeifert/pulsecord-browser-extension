@@ -37,6 +37,7 @@ function createSiteContext(
     nowUnixSeconds: 1710000000,
     playbackState: "idle",
     playbackTimestamps: {},
+    embeddedPlayback: null,
     ...overrides
   };
 }
@@ -124,12 +125,81 @@ test("9anime watch page returns a complete activity card", () => {
   assert.ok(activity && "activityCard" in activity && activity.activityCard);
   assert.ok(activity.activityCard.assets);
   assert.ok(activity.activityCard.buttons);
-  assert.equal(activity.activityCard.details, "Example Show");
+  assert.equal(activity.activityCard.details, "Watching Example Show");
   assert.equal(activity.activityCard.state, "Episode 12");
-  assert.equal(activity.activityCard.type, "watching");
+  assert.equal(activity.activityCard.type, "listening");
   assert.equal(activity.activityCard.assets.largeImage, "https://cdn.example.com/poster.jpg");
+  assert.equal(activity.activityCard.assets.smallImage, "playing");
+  assert.equal(activity.activityCard.assets.smallText, "Playing");
   assert.equal(activity.activityCard.buttons[0].label, "Watch Anime");
   assert.equal(activity.activityCard.startedAtUnixSeconds, 1709999700);
+});
+
+test("9anime watch page prefers embedded playback telemetry for paused state", () => {
+  const documentMock = {
+    title: "Watch Example Show online free on 9anime",
+    querySelector(selector: string) {
+      if (selector === ".film-infor .film-name.dynamic-name") {
+        return { textContent: "Example Show" };
+      }
+      if (selector === ".ep-item.active") {
+        return {
+          textContent: "12",
+          dataset: { number: "12" },
+          querySelector() {
+            return null;
+          }
+        };
+      }
+      if (selector === ".anime-poster img") {
+        return { src: "https://cdn.example.com/poster.jpg" };
+      }
+      return null;
+    }
+  };
+
+  const activity = anime9.collectActivity(createSiteContext({
+    location: {
+      href: "https://www.9animetv.to/watch/example",
+      pathname: "/watch/example",
+      search: ""
+    },
+    playbackState: "idle",
+    playbackTimestamps: {},
+    embeddedPlayback: {
+      currentTime: 321,
+      duration: 1440,
+      paused: true,
+      receivedAtUnixMs: 1710000000000,
+      sourceUrl: "https://www.9animetv.to/player"
+    },
+    document: documentMock
+  }));
+
+  assert.ok(activity && "activityCard" in activity && activity.activityCard);
+  assert.equal(activity.playbackState, "paused");
+  assert.equal(activity.activityCard.assets?.smallImage, "paused");
+  assert.equal(activity.activityCard.assets?.smallText, "Paused");
+  assert.equal(activity.activityCard.startedAtUnixSeconds, null);
+  assert.equal(activity.activityCard.endAtUnixSeconds, null);
+});
+
+test("9anime watch page returns null when title cannot be resolved", () => {
+  const activity = anime9.collectActivity(createSiteContext({
+    location: {
+      href: "https://www.9animetv.to/watch/example",
+      pathname: "/watch/example",
+      search: ""
+    },
+    document: {
+      title: "",
+      querySelector() {
+        return null;
+      }
+    }
+  }));
+
+  assert.equal(activity, null);
 });
 
 test("sanitizeActivityCard preserves remote image URLs", () => {
@@ -192,6 +262,45 @@ test("sanitizeActivityCard preserves valid activity type", () => {
 
   assert.ok(card);
   assert.equal(card.type, "watching");
+});
+
+test("sanitizeActivityCard leaves missing activity type unset", () => {
+  siteConfig.reset();
+  const card = registryApi.sanitizeActivityCard({
+    details: "Example Show",
+    state: "Episode 12"
+  });
+
+  assert.ok(card);
+  assert.equal(card.type, undefined);
+});
+
+test("sanitizeActivityCard drops invalid activity type", () => {
+  siteConfig.reset();
+  const card = registryApi.sanitizeActivityCard({
+    details: "Example Show",
+    state: "Episode 12",
+    type: "invalid" as DrpcActivityType
+  });
+
+  assert.ok(card);
+  assert.equal(card.type, undefined);
+});
+
+test("site config strips legacy persisted type overrides", () => {
+  siteConfig.setConfig({
+    "9anime": {
+      enabled: true,
+      activityOverrides: {
+        type: "playing",
+        details: "Custom Details"
+      }
+    }
+  });
+
+  const config = siteConfig.getSiteConfig("9anime");
+  assert.equal(config.activityOverrides?.type, undefined);
+  assert.equal(config.activityOverrides?.details, "Custom Details");
 });
 
 test("sticky cached snapshot survives switching to an undefined tab", () => {

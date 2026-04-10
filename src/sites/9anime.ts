@@ -10,6 +10,8 @@
   globalThis as DrpcGlobalRoot,
   function(): DrpcSiteDefinition {
     const LOGO_URL = "https://cdn.rcd.gg/PreMiD/websites/0-9/9anime/assets/logo.png";
+    const PLAYING_ASSET = "playing";
+    const PAUSED_ASSET = "paused";
 
     function createBrowsingCard(
       nowUnixSeconds: number,
@@ -43,14 +45,18 @@
       const element = documentRef.querySelector(".film-infor .film-name.dynamic-name") as
         | { textContent?: string | null }
         | null;
+      let resolvedTitle = "";
+
       if (element?.textContent) {
-        return element.textContent.trim();
+        resolvedTitle = element.textContent.trim();
+      } else {
+        resolvedTitle = String(documentRef.title || "")
+          .replace(/^Watch /i, "")
+          .replace(/ online free on 9anime$/i, "")
+          .trim();
       }
 
-      return String(documentRef.title || "")
-        .replace(/^Watch /i, "")
-        .replace(/ online free on 9anime$/i, "")
-        .trim();
+      return resolvedTitle ? `Watching: ${resolvedTitle}` : "";
     }
 
     function getEpisodeLabel(documentRef: DrpcDocumentLike): string {
@@ -92,6 +98,25 @@
     function getSearchQuery(search: string): string {
       const params = new URLSearchParams(search || "");
       return params.get("keyword") || params.get("q") || "";
+    }
+
+    function getEffectivePlaybackState(context: DrpcSiteContext): DrpcPlaybackState {
+      if (context.embeddedPlayback) {
+        return context.embeddedPlayback.paused ? "paused" : "playing";
+      }
+
+      return context.playbackState;
+    }
+
+    function getEffectivePlaybackTimestamps(context: DrpcSiteContext): DrpcPlaybackTimestamps {
+      if (!context.embeddedPlayback) {
+        return context.playbackTimestamps;
+      }
+
+      return {
+        startedAtUnixSeconds: context.embeddedPlayback.startedAtUnixSeconds,
+        endAtUnixSeconds: context.embeddedPlayback.endAtUnixSeconds
+      };
     }
 
     return {
@@ -156,25 +181,29 @@
 
           const episodeLabel = getEpisodeLabel(context.document);
           const coverArt = getCoverArt(context.document);
-          const playing = context.playbackState === "playing";
+          const playbackState = getEffectivePlaybackState(context);
+          const playbackTimestamps = getEffectivePlaybackTimestamps(context);
+          const playing = playbackState === "playing";
 
           return {
             pageTitle: title,
+            playbackState,
             activityCard: {
               name: title,
               details: title,
               state: episodeLabel || "Watching on 9anime",
-              type: "watching",
+              type: "listening",
               statusDisplayType: "details",
-              showElapsedTime: Boolean(playing && context.playbackTimestamps.startedAtUnixSeconds),
+              showElapsedTime: Boolean(playing && playbackTimestamps.startedAtUnixSeconds),
               startedAtUnixSeconds: playing
-                ? context.playbackTimestamps.startedAtUnixSeconds ?? null
+                ? playbackTimestamps.startedAtUnixSeconds ?? null
                 : null,
-              endAtUnixSeconds: playing ? context.playbackTimestamps.endAtUnixSeconds ?? null : null,
+              endAtUnixSeconds: playing ? playbackTimestamps.endAtUnixSeconds ?? null : null,
               assets: {
                 largeImage: coverArt,
                 largeText: episodeLabel || "9anime",
                 largeUrl: context.location.href,
+                smallImage: playing ? PLAYING_ASSET : PAUSED_ASSET,
                 smallText: playing ? "Playing" : "Paused"
               },
               buttons: [

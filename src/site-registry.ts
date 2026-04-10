@@ -12,7 +12,15 @@
   globalThis as DrpcGlobalRoot,
   function(): DrpcSiteRegistryApi {
     const globalRoot = globalThis as DrpcGlobalRoot;
-    const ACTIVITY_TYPES: DrpcActivityType[] = ["playing", "watching"];
+    const ACTIVITY_TYPES: DrpcActivityType[] = [
+      "playing",
+      "watching",
+      "listening",
+      "streaming",
+      "customStatus",
+      "competing",
+      "hangStatus"
+    ];
     const STATUS_DISPLAY_TYPES: DrpcStatusDisplayType[] = ["name", "details", "state"];
     const DEFAULT_SITE_CONFIG: DrpcResolvedSiteConfig = {
       enabled: true,
@@ -104,6 +112,19 @@
       return Math.trunc(value);
     }
 
+    function sanitizeActivityType(value: unknown): DrpcActivityType | undefined {
+      const normalized = sanitizeString(value);
+      return ACTIVITY_TYPES.includes(normalized as DrpcActivityType)
+        ? (normalized as DrpcActivityType)
+        : undefined;
+    }
+
+    function sanitizeStatusDisplayType(value: unknown): DrpcStatusDisplayType {
+      return STATUS_DISPLAY_TYPES.includes(String(value || "") as DrpcStatusDisplayType)
+        ? (value as DrpcStatusDisplayType)
+        : "name";
+    }
+
     function hasOwn(value: object, key: string): boolean {
       return Object.prototype.hasOwnProperty.call(value, key);
     }
@@ -153,17 +174,14 @@
       if (hasOwn(overrides, "stateUrl")) {
         normalized.stateUrl = sanitizeString(overrides.stateUrl);
       }
-      if (
-        hasOwn(overrides, "type") &&
-        ACTIVITY_TYPES.includes(overrides.type || "playing")
-      ) {
-        normalized.type = overrides.type;
+      if (hasOwn(overrides, "type")) {
+        const type = sanitizeActivityType(overrides.type);
+        if (type) {
+          normalized.type = type;
+        }
       }
-      if (
-        hasOwn(overrides, "statusDisplayType") &&
-        STATUS_DISPLAY_TYPES.includes(overrides.statusDisplayType || "name")
-      ) {
-        normalized.statusDisplayType = overrides.statusDisplayType;
+      if (hasOwn(overrides, "statusDisplayType")) {
+        normalized.statusDisplayType = sanitizeStatusDisplayType(overrides.statusDisplayType);
       }
       if (hasOwn(overrides, "showElapsedTime") && typeof overrides.showElapsedTime === "boolean") {
         normalized.showElapsedTime = overrides.showElapsedTime;
@@ -199,25 +217,22 @@
         return null;
       }
 
-      const statusDisplayType = STATUS_DISPLAY_TYPES.includes(card.statusDisplayType || "name")
-        ? (card.statusDisplayType as DrpcStatusDisplayType)
-        : "name";
-      const activityType = ACTIVITY_TYPES.includes(card.type || "playing")
-        ? (card.type as DrpcActivityType)
-        : "playing";
-
       const normalized: DrpcActivityCard = {
         name: sanitizeString(card.name),
         details: sanitizeString(card.details),
         detailsUrl: sanitizeString(card.detailsUrl),
         state: sanitizeString(card.state),
         stateUrl: sanitizeString(card.stateUrl),
-        type: activityType,
-        statusDisplayType,
+        statusDisplayType: sanitizeStatusDisplayType(card.statusDisplayType),
         showElapsedTime: card.showElapsedTime !== false,
         assets: sanitizeAssets(card.assets),
         buttons: sanitizeButtons(card.buttons)
       };
+
+      const type = sanitizeActivityType(card.type);
+      if (type) {
+        normalized.type = type;
+      }
 
       const startedAtUnixSeconds = sanitizeTimestamp(card.startedAtUnixSeconds);
       const endAtUnixSeconds = sanitizeTimestamp(card.endAtUnixSeconds);

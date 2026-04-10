@@ -1,6 +1,6 @@
 type DrpcPlaybackState = "idle" | "paused" | "playing";
 type DrpcActivityDisposition = "publish" | "clear" | "sticky";
-type DrpcActivityType = "playing" | "watching";
+type DrpcActivityType = "playing" | "watching" | "listening" | "streaming" | "customStatus" | "competing" | "hangStatus" ;
 type DrpcStatusDisplayType = "name" | "details" | "state";
 type DrpcSiteSettingValue = string | number | boolean | null;
 
@@ -89,6 +89,16 @@ interface DrpcPlaybackTimestamps {
   endAtUnixSeconds?: number;
 }
 
+interface DrpcEmbeddedPlayback {
+  currentTime: number;
+  duration: number;
+  paused: boolean;
+  startedAtUnixSeconds?: number;
+  endAtUnixSeconds?: number;
+  receivedAtUnixMs: number;
+  sourceUrl?: string;
+}
+
 interface DrpcLocationLike {
   href: string;
   host?: string;
@@ -117,6 +127,7 @@ interface DrpcSiteContext {
   nowUnixSeconds: number;
   playbackState: DrpcPlaybackState;
   playbackTimestamps: DrpcPlaybackTimestamps;
+  embeddedPlayback: DrpcEmbeddedPlayback | null;
 }
 
 interface DrpcSiteDefinition {

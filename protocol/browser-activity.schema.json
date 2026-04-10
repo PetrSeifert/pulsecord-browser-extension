@@ -70,6 +70,10 @@
         "detailsUrl": { "type": "string" },
         "state": { "type": "string" },
         "stateUrl": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["playing", "watching", "listening", "streaming", "customStatus", "competing", "hangStatus"]
+        },
         "statusDisplayType": {
           "type": "string",
           "enum": ["name", "details", "state"]
