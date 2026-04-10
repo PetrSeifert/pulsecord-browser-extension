@@ -14,7 +14,6 @@
     const PAUSED_ASSET = "paused";
 
     function createBrowsingCard(
-      nowUnixSeconds: number,
       details: string,
       state: string,
       url: string,
@@ -25,7 +24,6 @@
         state: state || "Browsing 9anime",
         statusDisplayType: "details",
         showElapsedTime: true,
-        startedAtUnixSeconds: nowUnixSeconds,
         assets: {
           largeImage: LOGO_URL,
           largeText: "9anime",
@@ -133,7 +131,6 @@
           return {
             pageTitle: "9anime",
             activityCard: createBrowsingCard(
-              nowUnixSeconds,
               "Viewing Homepage",
               "Browsing 9anime",
               context.location.href
@@ -149,7 +146,6 @@
           return {
             pageTitle: `Search: ${query}`,
             activityCard: createBrowsingCard(
-              nowUnixSeconds,
               `Viewing results: ${query}`,
               "Searching 9anime",
               context.location.href
@@ -165,7 +161,6 @@
           return {
             pageTitle: `Genre: ${genre}`,
             activityCard: createBrowsingCard(
-              nowUnixSeconds,
               `Viewing genre: ${genre}`,
               "Browsing 9anime",
               context.location.href
@@ -242,7 +237,6 @@
           return {
             pageTitle: labels[pathname],
             activityCard: createBrowsingCard(
-              nowUnixSeconds,
               `${labels[pathname]}...`,
               "Browsing 9anime",
               context.location.href

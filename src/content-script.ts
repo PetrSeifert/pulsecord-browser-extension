@@ -5,6 +5,20 @@
   const siteConfigApi = root.DrpcSiteConfig;
   const FRAME_MEDIA_MESSAGE_TYPE = "drpc-frame-media";
   const EMBEDDED_PLAYBACK_TTL_MS = 30000;
+  const PLAYBACK_PROGRESS_SNAPSHOT_INTERVAL_MS = 1000;
+  const SNAPSHOT_KEEPALIVE_INTERVAL_MS = 10000;
+  const PLAYBACK_TIMESTAMP_DRIFT_TOLERANCE_SECONDS = 2;
+  const MEDIA_IMMEDIATE_EVENTS = [
+    "play",
+    "playing",
+    "pause",
+    "seeking",
+    "seeked",
+    "loadedmetadata",
+    "durationchange",
+    "ended",
+    "ratechange"
+  ] as const;
   const isTopFrame = window.top === window;
 
   // Load persisted site config so user changes apply without page reload.
@@ -25,9 +39,24 @@
 
   let attachedMedia: HTMLMediaElement | null = null;
   let lastSignature = "";
+  let lastSnapshotSentAt = 0;
   let lastTimeUpdateSentAt = 0;
   let lastFramePlaybackSignature = "";
   let embeddedPlayback: DrpcEmbeddedPlayback | null = null;
+  let localPlaybackAnchor: {
+    sourceKey: string;
+    currentTime: number;
+    durationSeconds: number;
+    observedAtUnixMs: number;
+    startedAtUnixSeconds: number;
+  } | null = null;
+  let embeddedPlaybackAnchor: {
+    sourceKey: string;
+    currentTime: number;
+    durationSeconds: number;
+    observedAtUnixMs: number;
+    startedAtUnixSeconds: number;
+  } | null = null;
 
   function collectMetaTags(): Record<string, string> {
     const entries: Record<string, string> = {};
@@ -90,16 +119,81 @@
     };
   }
 
-  function getPlaybackTimestamps(
-    media: HTMLMediaElement | null,
-    nowUnixSeconds: number
-  ): DrpcPlaybackTimestamps {
-    const sample = getPlaybackSample(media);
+  function resolveStablePlaybackTimestamps(
+    sample: { currentTime: number; duration: number; paused: boolean } | null,
+    nowUnixMs: number,
+    sourceKey: string,
+    previousAnchor: {
+      sourceKey: string;
+      currentTime: number;
+      durationSeconds: number;
+      observedAtUnixMs: number;
+      startedAtUnixSeconds: number;
+    } | null
+  ): {
+    timestamps: DrpcPlaybackTimestamps;
+    anchor: {
+      sourceKey: string;
+      currentTime: number;
+      durationSeconds: number;
+      observedAtUnixMs: number;
+      startedAtUnixSeconds: number;
+    } | null;
+  } {
     if (!sample || sample.paused) {
-      return {};
+      return {
+        timestamps: {},
+        anchor: null
+      };
     }
 
-    return getPlaybackTimestampsFromSample(sample, nowUnixSeconds);
+    const currentTime = Math.max(0, sample.currentTime);
+    const currentTimeSeconds = Math.floor(currentTime);
+    const durationSeconds = Math.max(currentTimeSeconds, Math.floor(sample.duration));
+    const computedStart = Math.floor(nowUnixMs / 1000) - currentTimeSeconds;
+
+    let startedAtUnixSeconds = computedStart;
+    if (
+      previousAnchor &&
+      previousAnchor.sourceKey === sourceKey &&
+      Math.abs(previousAnchor.durationSeconds - durationSeconds) <= 1
+    ) {
+      const elapsedWallClockSeconds = Math.max(0, (nowUnixMs - previousAnchor.observedAtUnixMs) / 1000);
+      const expectedCurrentTime = previousAnchor.currentTime + elapsedWallClockSeconds;
+      const drift = Math.abs(expectedCurrentTime - currentTime);
+
+      if (drift <= PLAYBACK_TIMESTAMP_DRIFT_TOLERANCE_SECONDS) {
+        startedAtUnixSeconds = previousAnchor.startedAtUnixSeconds;
+      }
+    }
+
+    return {
+      timestamps: {
+        startedAtUnixSeconds,
+        endAtUnixSeconds: startedAtUnixSeconds + durationSeconds
+      },
+      anchor: {
+        sourceKey,
+        currentTime,
+        durationSeconds,
+        observedAtUnixMs: nowUnixMs,
+        startedAtUnixSeconds
+      }
+    };
+  }
+
+  function getPlaybackTimestamps(
+    media: HTMLMediaElement | null,
+    nowUnixMs: number
+  ): DrpcPlaybackTimestamps {
+    const resolved = resolveStablePlaybackTimestamps(
+      getPlaybackSample(media),
+      nowUnixMs,
+      `top:${location.href}`,
+      localPlaybackAnchor
+    );
+    localPlaybackAnchor = resolved.anchor;
+    return resolved.timestamps;
   }
 
   function getEmbeddedPlayback(nowUnixMs: number): DrpcEmbeddedPlayback | null {
@@ -138,7 +232,7 @@
       metaTags: collectMetaTags(),
       nowUnixSeconds,
       playbackState: getPlaybackState(media),
-      playbackTimestamps: getPlaybackTimestamps(media, nowUnixSeconds),
+      playbackTimestamps: getPlaybackTimestamps(media, nowUnixMs),
       embeddedPlayback: getEmbeddedPlayback(nowUnixMs)
     };
   }
@@ -213,19 +307,21 @@
     ]);
   }
 
-  function sendSnapshot(reason: "init" | "media" | "mutation" | "navigation" | "timeupdate"): void {
+  function sendSnapshot(reason: "init" | "media" | "mutation" | "navigation" | "timeupdate" | "heartbeat"): void {
     if (!isTopFrame) {
       return;
     }
 
     const snapshot = buildSnapshot();
     const signature = buildSignature(snapshot);
+    const now = Date.now();
 
-    if (reason !== "timeupdate" && signature === lastSignature) {
+    if (signature === lastSignature && now - lastSnapshotSentAt < SNAPSHOT_KEEPALIVE_INTERVAL_MS) {
       return;
     }
 
     lastSignature = signature;
+    lastSnapshotSentAt = now;
     console.log("[drpc] outgoing snapshot", snapshot);
     chrome.runtime.sendMessage({ type: "snapshot", snapshot }, () => {
       void chrome.runtime.lastError;
@@ -242,6 +338,7 @@
     }
 
     embeddedPlayback = null;
+    embeddedPlaybackAnchor = null;
     sendSnapshot("media");
   }
 
@@ -307,22 +404,25 @@
 
     const paused = Boolean(data["paused"]);
     const nowUnixMs = Date.now();
-    const timestamps = paused
-      ? {}
-      : getPlaybackTimestampsFromSample(
-          {
-            currentTime: Math.max(0, currentTime),
-            duration: Math.max(currentTime, duration)
-          },
-          Math.floor(nowUnixMs / 1000)
-        );
-
-    embeddedPlayback = {
+    const sample = {
       currentTime: Math.max(0, currentTime),
       duration: Math.max(currentTime, duration),
+      paused
+    };
+    const resolved = resolveStablePlaybackTimestamps(
+      sample,
+      nowUnixMs,
+      `frame:${sourceUrl || location.href}`,
+      embeddedPlaybackAnchor
+    );
+    embeddedPlaybackAnchor = resolved.anchor;
+
+    embeddedPlayback = {
+      currentTime: sample.currentTime,
+      duration: sample.duration,
       paused,
-      startedAtUnixSeconds: timestamps.startedAtUnixSeconds,
-      endAtUnixSeconds: timestamps.endAtUnixSeconds,
+      startedAtUnixSeconds: resolved.timestamps.startedAtUnixSeconds,
+      endAtUnixSeconds: resolved.timestamps.endAtUnixSeconds,
       receivedAtUnixMs: nowUnixMs,
       sourceUrl
     };
@@ -336,6 +436,8 @@
     }
 
     attachedMedia = media;
+    lastTimeUpdateSentAt = 0;
+    localPlaybackAnchor = null;
     const sendImmediate = (): void => {
       if (isTopFrame) {
         sendSnapshot("media");
@@ -346,7 +448,7 @@
     };
     const sendTimeUpdate = (): void => {
       const now = Date.now();
-      if (now - lastTimeUpdateSentAt >= 15000) {
+      if (now - lastTimeUpdateSentAt >= PLAYBACK_PROGRESS_SNAPSHOT_INTERVAL_MS) {
         lastTimeUpdateSentAt = now;
         if (isTopFrame) {
           sendSnapshot("timeupdate");
@@ -357,11 +459,9 @@
       }
     };
 
-    ["play", "pause", "seeking", "seeked", "loadedmetadata", "ended", "ratechange"].forEach(
-      (eventName) => {
-        media.addEventListener(eventName, sendImmediate);
-      }
-    );
+    MEDIA_IMMEDIATE_EVENTS.forEach((eventName) => {
+      media.addEventListener(eventName, sendImmediate);
+    });
     media.addEventListener("timeupdate", sendTimeUpdate);
   }
 
@@ -374,6 +474,7 @@
     history.pushState = function(...args) {
       const result = originalPushState.apply(this, args);
       embeddedPlayback = null;
+      embeddedPlaybackAnchor = null;
       setTimeout(() => sendSnapshot("navigation"), 0);
       return result;
     };
@@ -382,16 +483,19 @@
     history.replaceState = function(...args) {
       const result = originalReplaceState.apply(this, args);
       embeddedPlayback = null;
+      embeddedPlaybackAnchor = null;
       setTimeout(() => sendSnapshot("navigation"), 0);
       return result;
     };
 
     addEventListener("popstate", () => {
       embeddedPlayback = null;
+      embeddedPlaybackAnchor = null;
       sendSnapshot("navigation");
     });
     addEventListener("hashchange", () => {
       embeddedPlayback = null;
+      embeddedPlaybackAnchor = null;
       sendSnapshot("navigation");
     });
   }
@@ -425,6 +529,9 @@
 
   if (isTopFrame) {
     sendSnapshot("init");
+    setInterval(() => {
+      sendSnapshot("heartbeat");
+    }, SNAPSHOT_KEEPALIVE_INTERVAL_MS);
   } else {
     postFramePlayback(true);
     setInterval(() => {

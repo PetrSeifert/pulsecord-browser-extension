@@ -85,6 +85,21 @@ test("9anime returns null for undefined pages", () => {
   assert.equal(activity, null);
 });
 
+test("9anime browsing pages request elapsed time without browser timestamps", () => {
+  const activity = anime9.collectActivity(createSiteContext({
+    location: {
+      href: "https://www.9animetv.to/search?keyword=naruto",
+      pathname: "/search",
+      search: "?keyword=naruto"
+    }
+  }));
+
+  assert.ok(activity && "activityCard" in activity && activity.activityCard);
+  assert.equal(activity.activityCard.showElapsedTime, true);
+  assert.equal(activity.activityCard.startedAtUnixSeconds, undefined);
+  assert.equal(activity.activityCard.endAtUnixSeconds, undefined);
+});
+
 test("9anime watch page returns a complete activity card", () => {
   const documentMock = {
     title: "Watch Example Show online free on 9anime",
@@ -125,7 +140,7 @@ test("9anime watch page returns a complete activity card", () => {
   assert.ok(activity && "activityCard" in activity && activity.activityCard);
   assert.ok(activity.activityCard.assets);
   assert.ok(activity.activityCard.buttons);
-  assert.equal(activity.activityCard.details, "Watching Example Show");
+  assert.equal(activity.activityCard.details, "Watching: Example Show");
   assert.equal(activity.activityCard.state, "Episode 12");
   assert.equal(activity.activityCard.type, "listening");
   assert.equal(activity.activityCard.assets.largeImage, "https://cdn.example.com/poster.jpg");
