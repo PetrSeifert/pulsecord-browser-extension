@@ -13,7 +13,8 @@
     "seeked",
     "loadedmetadata",
     "durationchange",
-    "ended"
+    "ended",
+    "ratechange"
   ] as const;
 
   let currentMedia: HTMLMediaElement | null = null;
@@ -34,7 +35,9 @@
       href: location.href,
       currentTime: Math.max(0, media.currentTime),
       duration: Math.max(media.currentTime, media.duration),
-      paused: media.paused || media.ended
+      paused: media.paused || media.ended,
+      playbackRate:
+        Number.isFinite(media.playbackRate) && media.playbackRate > 0 ? media.playbackRate : 1
     };
   }
 
@@ -45,7 +48,8 @@
           href: payload.href,
           currentTime: Math.floor(payload.currentTime),
           duration: Math.floor(payload.duration),
-          paused: payload.paused
+          paused: payload.paused,
+          playbackRate: payload.playbackRate
         })
       : JSON.stringify({
           href: location.href,

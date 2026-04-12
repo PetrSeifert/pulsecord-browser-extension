@@ -7,12 +7,14 @@
   const SITE_META = {
     crunchyroll: { name: "Crunchyroll", icon: "C" },
     hidive:      { name: "HIDIVE",      icon: "H" },
+    netflix:     { name: "Netflix",     icon: "N" },
     "9anime":    { name: "9anime",      icon: "9" }
   };
 
   const DEFAULT_CONFIG = {
     crunchyroll: { enabled: true, settings: {}, activityOverrides: {} },
     hidive:      { enabled: true, settings: {}, activityOverrides: {} },
+    netflix:     { enabled: true, settings: {}, activityOverrides: {} },
     "9anime":    { enabled: true, settings: {}, activityOverrides: {} }
   };
 

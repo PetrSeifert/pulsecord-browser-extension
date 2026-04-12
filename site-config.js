@@ -22,6 +22,11 @@
         settings: {},
         activityOverrides: {}
       },
+      netflix: {
+        enabled: true,
+        settings: {},
+        activityOverrides: {}
+      },
       "9anime": {
         enabled: true,
         // Example:

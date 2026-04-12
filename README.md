@@ -24,6 +24,7 @@ When developed inside the `pulsecord` workspace, this repo lives at `external/dr
 
 - Crunchyroll
 - HIDIVE
+- Netflix
 - 9anime
 
 ## Site configuration

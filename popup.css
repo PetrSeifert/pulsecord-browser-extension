@@ -242,6 +242,7 @@ body::-webkit-scrollbar-thumb {
 
 .site-icon.crunchyroll { background: rgba(245, 130, 31, 0.12); color: #f5821f; }
 .site-icon.hidive      { background: rgba(0, 174, 239, 0.12); color: #00aeef; }
+.site-icon.netflix     { background: rgba(229, 9, 20, 0.14); color: #e50914; }
 .site-icon.\39anime    { background: rgba(153, 102, 255, 0.12); color: #9966ff; }
 
 .site-name {
@@ -563,6 +564,7 @@ body::-webkit-scrollbar-thumb {
 .site-card:nth-child(1) { animation-delay: 40ms; }
 .site-card:nth-child(2) { animation-delay: 100ms; }
 .site-card:nth-child(3) { animation-delay: 160ms; }
+.site-card:nth-child(4) { animation-delay: 220ms; }
 
 @keyframes card-in {
   from {

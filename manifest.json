@@ -12,7 +12,8 @@
   "host_permissions": [
     "https://*.crunchyroll.com/*",
     "https://*.hidive.com/*",
-    "https://*.9animetv.to/*"
+    "https://*.9animetv.to/*",
+    "https://*.netflix.com/*"
   ],
   "background": {
     "service_worker": "dist/src/background.js"
@@ -26,14 +27,17 @@
       "matches": [
         "https://*.crunchyroll.com/*",
         "https://*.hidive.com/*",
-        "https://*.9animetv.to/*"
+        "https://*.9animetv.to/*",
+        "https://*.netflix.com/*"
       ],
       "js": [
         "site-config.js",
         "dist/src/site-registry.js",
+        "dist/src/snapshot-gate.js",
         "dist/src/sites/crunchyroll.js",
         "dist/src/sites/hidive.js",
         "dist/src/sites/9anime.js",
+        "dist/src/sites/netflix.js",
         "dist/src/content-script.js"
       ],
       "run_at": "document_idle"

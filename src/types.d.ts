@@ -2,6 +2,7 @@ type DrpcPlaybackState = "idle" | "paused" | "playing";
 type DrpcActivityDisposition = "publish" | "clear" | "sticky";
 type DrpcActivityType = "playing" | "watching" | "listening" | "streaming" | "competing" ;
 type DrpcStatusDisplayType = "name" | "details" | "state";
+type DrpcSnapshotSendReason = "init" | "media" | "mutation" | "navigation" | "timeupdate" | "heartbeat";
 type DrpcSiteSettingValue = string | number | boolean | null;
 
 interface DrpcActivityButton {
@@ -93,6 +94,7 @@ interface DrpcEmbeddedPlayback {
   currentTime: number;
   duration: number;
   paused: boolean;
+  playbackRate: number;
   startedAtUnixSeconds?: number;
   endAtUnixSeconds?: number;
   receivedAtUnixMs: number;
@@ -117,6 +119,9 @@ interface DrpcSiteActivityResult {
   activityCard?: DrpcActivityCard | null;
 }
 
+type DrpcCollectActivityValue = DrpcSiteActivityResult | DrpcActivityCard | null;
+type DrpcCollectActivityResult = DrpcCollectActivityValue | Promise<DrpcCollectActivityValue>;
+
 interface DrpcSiteContext {
   siteDefinition: DrpcSiteDefinition | null;
   siteConfig: DrpcResolvedSiteConfig;
@@ -136,7 +141,7 @@ interface DrpcSiteDefinition {
     name: string;
     matches: string[];
   };
-  collectActivity(context: DrpcSiteContext): DrpcSiteActivityResult | DrpcActivityCard | null;
+  collectActivity(context: DrpcSiteContext): DrpcCollectActivityResult;
 }
 
 interface DrpcSiteRegistryRuntime {
@@ -176,11 +181,26 @@ interface DrpcBackgroundStateApi {
   selectLatestCachedSnapshot(cache: Map<number, DrpcCachedSnapshotEntry>): DrpcSnapshot | null;
 }
 
+interface DrpcSnapshotGateInput {
+  reason: DrpcSnapshotSendReason;
+  signature: string;
+  lastSignature: string;
+  lastSnapshotSentAt: number;
+  keepaliveIntervalMs: number;
+  nowUnixMs: number;
+}
+
+interface DrpcSnapshotGateApi {
+  buildSignature(snapshot: DrpcSnapshotMessage): string;
+  shouldSendSnapshot(input: DrpcSnapshotGateInput): boolean;
+}
+
 type DrpcGlobalRoot = typeof globalThis & {
   DrpcSiteRegistryApi?: DrpcSiteRegistryApi;
   DrpcSiteRegistry?: DrpcSiteRegistryRuntime;
   DrpcSiteConfig?: DrpcSiteConfigApi;
   DrpcBackgroundState?: DrpcBackgroundStateApi;
+  DrpcSnapshotGate?: DrpcSnapshotGateApi;
 };
 
 declare function importScripts(...urls: string[]): void;

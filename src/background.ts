@@ -4,7 +4,8 @@ importScripts(
   "site-registry.js",
   "sites/crunchyroll.js",
   "sites/hidive.js",
-  "sites/9anime.js"
+  "sites/9anime.js",
+  "sites/netflix.js"
 );
 
 const HOST_NAME = "com.drpc.browser_host";
@@ -219,7 +220,7 @@ async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
   return tabs[0] || null;
 }
 
-async function requestSnapshotFromTab(tab: chrome.tabs.Tab): Promise<DrpcSnapshot> {
+async function requestSnapshotFromTab(tab: chrome.tabs.Tab): Promise<DrpcSnapshot | null> {
   if (tab.id == null || !isInspectableWebUrl(tab.url)) {
     return buildClearSnapshot(tab);
   }
@@ -238,10 +239,10 @@ async function requestSnapshotFromTab(tab: chrome.tabs.Tab): Promise<DrpcSnapsho
       return normalizeSnapshot(response.snapshot, tab);
     }
   } catch {
-    // No content script available for this tab.
+    return null;
   }
 
-  return buildClearSnapshot(tab, siteDefinition.metadata.id);
+  return null;
 }
 
 async function refreshCachedSnapshotForTab(tabId: number): Promise<DrpcSnapshot | null> {
@@ -253,6 +254,9 @@ async function refreshCachedSnapshotForTab(tabId: number): Promise<DrpcSnapshot 
     }
 
     const snapshot = await requestSnapshotFromTab(tab);
+    if (!snapshot) {
+      return cachedSiteSnapshots.get(tabId)?.snapshot || null;
+    }
     cacheSnapshot(snapshot);
     return snapshot;
   } catch {
@@ -292,6 +296,15 @@ async function publishBestAvailableSnapshot(activeTab: chrome.tabs.Tab | null = 
   }
 
   const snapshot = await requestSnapshotFromTab(tab);
+  if (!snapshot) {
+    const stickySnapshot = buildStickySnapshot();
+    if (stickySnapshot) {
+      postSnapshot(stickySnapshot, "Using sticky matched browser activity.");
+      return;
+    }
+
+    return;
+  }
   cacheSnapshot(snapshot);
 
   if (snapshot.activityDisposition === "publish" && snapshot.activityCard) {
