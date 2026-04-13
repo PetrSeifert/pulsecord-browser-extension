@@ -10,7 +10,6 @@
   globalThis as DrpcGlobalRoot,
   function(): DrpcSiteDefinition {
     const LOGO_URL = "https://static.crunchyroll.com/favicons/favicon-32x32.png";
-    const PLAYING_ASSET = "playing";
     const PAUSED_ASSET = "paused";
 
     function cleanTitle(title: string): string {
@@ -75,7 +74,7 @@
               largeImage: context.metaTags["og:image"] || LOGO_URL,
               largeText: split.episodeLabel || "Crunchyroll",
               largeUrl: context.location.href,
-              smallImage: playing ? PLAYING_ASSET : PAUSED_ASSET,
+              smallImage: playing ? "" : PAUSED_ASSET,
               smallText: playing ? "Playing" : "Paused"
             },
             buttons: [

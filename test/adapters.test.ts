@@ -151,7 +151,7 @@ test("9anime watch page returns a complete activity card", () => {
   assert.equal(activity.activityCard.state, "Episode 12");
   assert.equal(activity.activityCard.type, "listening");
   assert.equal(activity.activityCard.assets.largeImage, "https://cdn.example.com/poster.jpg");
-  assert.equal(activity.activityCard.assets.smallImage, "playing");
+  assert.equal(activity.activityCard.assets.smallImage, "");
   assert.equal(activity.activityCard.assets.smallText, "Playing");
   assert.equal(activity.activityCard.buttons[0].label, "Watch Anime");
   assert.equal(activity.activityCard.startedAtUnixSeconds, 1709999700);
@@ -279,7 +279,7 @@ test("netflix watch page resolves show metadata and timestamps", async () => {
   assert.equal(activity.activityCard.state, "S2 E4 - The Reveal");
   assert.equal(activity.activityCard.type, "listening");
   assert.equal(activity.activityCard.assets?.largeImage, "https://cdn.example.com/netflix-show.jpg");
-  assert.equal(activity.activityCard.assets?.smallImage, "playing");
+  assert.equal(activity.activityCard.assets?.smallImage, "");
   assert.equal(activity.activityCard.buttons?.[0]?.label, "Watch Episode");
   assert.equal(activity.activityCard.buttons?.[1]?.label, "View Series");
   assert.equal(activity.activityCard.startedAtUnixSeconds, 1709999700);
@@ -482,7 +482,7 @@ test("snapshot gate tracks full activity card metadata", () => {
       type: "listening",
       assets: {
         largeImage: "https://cdn.example.com/poster.jpg",
-        smallImage: "playing",
+        smallImage: "",
         smallText: "Playing"
       },
       buttons: [

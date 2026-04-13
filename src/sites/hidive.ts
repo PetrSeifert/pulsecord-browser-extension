@@ -10,7 +10,6 @@
   globalThis as DrpcGlobalRoot,
   function(): DrpcSiteDefinition {
     const LOGO_URL = "https://www.hidive.com/favicon.ico";
-    const PLAYING_ASSET = "playing";
     const PAUSED_ASSET = "paused";
 
     function cleanTitle(title: string): string {
@@ -75,7 +74,7 @@
               largeImage: context.metaTags["og:image"] || LOGO_URL,
               largeText: split.episodeLabel || "HIDIVE",
               largeUrl: context.location.href,
-              smallImage: playing ? PLAYING_ASSET : PAUSED_ASSET,
+              smallImage: playing ? "" : PAUSED_ASSET,
               smallText: playing ? "Playing" : "Paused"
             },
             buttons: [

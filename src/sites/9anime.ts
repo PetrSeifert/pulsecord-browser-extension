@@ -10,7 +10,6 @@
   globalThis as DrpcGlobalRoot,
   function(): DrpcSiteDefinition {
     const LOGO_URL = "https://cdn.rcd.gg/PreMiD/websites/0-9/9anime/assets/logo.png";
-    const PLAYING_ASSET = "playing";
     const PAUSED_ASSET = "paused";
 
     function createBrowsingCard(
@@ -198,7 +197,7 @@
                 largeImage: coverArt,
                 largeText: episodeLabel || "9anime",
                 largeUrl: context.location.href,
-                smallImage: playing ? PLAYING_ASSET : PAUSED_ASSET,
+                smallImage: playing ? "" : PAUSED_ASSET,
                 smallText: playing ? "Playing" : "Paused"
               },
               buttons: [

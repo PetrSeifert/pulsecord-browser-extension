@@ -10,7 +10,6 @@
   globalThis as DrpcGlobalRoot,
   function(): DrpcSiteDefinition {
     const LOGO_URL = "https://cdn.rcd.gg/PreMiD/websites/N/Netflix/assets/logo.png";
-    const PLAYING_ASSET = "playing";
     const PAUSED_ASSET = "paused";
     const METADATA_ENDPOINT =
       "https://www.netflix.com/nq/website/memberapi/release/metadata?movieid=";
@@ -307,7 +306,7 @@
                   largeImage: getPosterUrl(video, context),
                   largeText: formatEpisodeLargeText(season, episode),
                   largeUrl: canonicalWatchUrl,
-                  smallImage: playing ? PLAYING_ASSET : PAUSED_ASSET,
+                  smallImage: playing ? "" : PAUSED_ASSET,
                   smallText: playing ? "Playing" : "Paused"
                 },
                 buttons: [
@@ -341,7 +340,7 @@
                   largeImage: getPosterUrl(video, context),
                   largeText: cleanText(video.title) || "Netflix",
                   largeUrl: canonicalWatchUrl,
-                  smallImage: playing ? PLAYING_ASSET : PAUSED_ASSET,
+                  smallImage: playing ? "" : PAUSED_ASSET,
                   smallText: playing ? "Playing" : "Paused"
                 },
                 buttons: [
@@ -370,7 +369,7 @@
                 largeImage: cleanText(context.metaTags["og:image"]) || LOGO_URL,
                 largeText: "Netflix",
                 largeUrl: canonicalWatchUrl,
-                smallImage: playing ? PLAYING_ASSET : PAUSED_ASSET,
+                smallImage: playing ? "" : PAUSED_ASSET,
                 smallText: playing ? "Playing" : "Paused"
               },
               buttons: [
