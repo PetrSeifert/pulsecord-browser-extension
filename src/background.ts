@@ -17,8 +17,7 @@ const registry = root.DrpcSiteRegistry;
 const siteConfigApi = root.DrpcSiteConfig;
 const stateApi = root.DrpcBackgroundState;
 const cachedSiteSnapshots = new Map<number, DrpcCachedSnapshotEntry>();
-
-let nativePort: chrome.runtime.Port | null = null;
+let nativeSendQueue: Promise<void> = Promise.resolve();
 
 function loadPersistedConfig(): void {
   if (!siteConfigApi) return;
@@ -72,33 +71,6 @@ function detectBrowserName(): "chrome" | "edge" | "opera" {
     return "opera";
   }
   return "chrome";
-}
-
-function ensureNativePort(): chrome.runtime.Port {
-  if (nativePort) {
-    return nativePort;
-  }
-
-  try {
-    nativePort = chrome.runtime.connectNative(HOST_NAME);
-    void updateStatus("wait", { message: "Connected to native host. Waiting for browser activity." });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    void updateStatus("error", { message: `connectNative failed: ${message}` });
-    throw error;
-  }
-
-  nativePort.onMessage.addListener(() => {});
-  nativePort.onDisconnect.addListener(() => {
-    if (chrome.runtime.lastError) {
-      console.warn("drpc native port disconnected:", chrome.runtime.lastError.message);
-      void updateStatus("error", { message: chrome.runtime.lastError.message });
-    } else {
-      void updateStatus("error", { message: "Native host disconnected." });
-    }
-    nativePort = null;
-  });
-  return nativePort;
 }
 
 function isInspectableWebUrl(url?: string): boolean {
@@ -190,14 +162,28 @@ function buildStickySnapshot(): DrpcSnapshot | null {
   return stateApi ? stateApi.selectLatestCachedSnapshot(cachedSiteSnapshots) : null;
 }
 
-function postSnapshot(snapshot: DrpcSnapshot | null, messageOverride: string | null = null): void {
-  if (!snapshot) {
-    return;
-  }
+type DrpcNativeHostResponse = {
+  ok?: boolean;
+  error?: string;
+} | null | undefined;
 
+async function sendSnapshotToNativeHost(
+  snapshot: DrpcSnapshot,
+  messageOverride: string | null = null
+): Promise<void> {
   try {
-    ensureNativePort().postMessage(snapshot);
-    void updateStatus("ok", {
+    const response = (await chrome.runtime.sendNativeMessage(
+      HOST_NAME,
+      snapshot
+    )) as DrpcNativeHostResponse;
+
+    if (!response?.ok) {
+      const message = response?.error || "Native host rejected the snapshot.";
+      await updateStatus("error", { message });
+      return;
+    }
+
+    await updateStatus("ok", {
       message: messageOverride || "Snapshot forwarded to native host.",
       host: snapshot.host,
       pageTitle: snapshot.pageTitle,
@@ -205,11 +191,20 @@ function postSnapshot(snapshot: DrpcSnapshot | null, messageOverride: string | n
       activityDisposition: snapshot.activityDisposition
     });
   } catch (error) {
-    nativePort = null;
-    console.warn("Failed to post drpc snapshot:", error);
+    console.warn("Failed to send drpc snapshot:", error);
     const message = error instanceof Error ? error.message : String(error);
-    void updateStatus("error", { message: `postMessage failed: ${message}` });
+    await updateStatus("error", { message: `sendNativeMessage failed: ${message}` });
   }
+}
+
+function postSnapshot(snapshot: DrpcSnapshot | null, messageOverride: string | null = null): void {
+  if (!snapshot) {
+    return;
+  }
+
+  nativeSendQueue = nativeSendQueue
+    .catch(() => undefined)
+    .then(() => sendSnapshotToNativeHost(snapshot, messageOverride));
 }
 
 async function getActiveTab(): Promise<chrome.tabs.Tab | null> {

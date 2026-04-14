@@ -88,6 +88,7 @@ chrome.storage.local.get("drpcStatus", console.log)
 
 from the extension service worker console.
 - `chrome://` pages, the Chrome Web Store, and other browser-owned pages cannot be inspected. The extension now reports these as unsupported browser pages instead of looking disconnected.
+- The extension sends each snapshot as a one-shot native message, so the host process may start and exit repeatedly during normal use.
 - Native host diagnostics are written to:
 
 ```text
